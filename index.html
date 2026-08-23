@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manhattan Weather</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #071a1f;
+    --bg2: #0c2a32;
+    --panel: rgba(8, 36, 42, 0.92);
+    --line: rgba(120, 220, 200, 0.18);
+    --text: #e7f7f2;
+    --muted: #8fb3ad;
+    --green: #3dffa8;
+    --teal: #2ec4b6;
+    --blue: #4da3ff;
+    --warn: #f0c14d;
+    --bad: #ff6b7a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(900px 500px at 10% -10%, rgba(46, 196, 182, 0.22), transparent 55%),
+      radial-gradient(700px 420px at 100% 0%, rgba(77, 163, 255, 0.18), transparent 50%),
+      linear-gradient(180deg, #062028 0%, #071a1f 40%, #06151c 100%);
+    min-height: 100vh;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 1.25rem 1rem 2.5rem; }
+  header { margin-bottom: 0.85rem; }
+  header h1 {
+    margin: 0; font-size: 1.55rem; font-weight: 700;
+    letter-spacing: -0.02em; color: var(--green);
+  }
+  header .sub { color: var(--muted); margin-top: 0.25rem; font-size: 0.95rem; }
+  #liveBadge {
+    display: inline-block; margin-left: 0.35rem;
+    padding: 0.1rem 0.45rem; border-radius: 999px;
+    font-size: 0.75rem; font-weight: 650;
+    background: rgba(61,255,168,0.12); color: var(--green);
+    vertical-align: 0.05rem;
+  }
+  #liveBadge.stale { background: rgba(240,193,77,0.15); color: var(--warn); }
+  #liveBadge.err { background: rgba(255,107,122,0.15); color: var(--bad); }
+  nav.tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.9rem 0 0.85rem; }
+  nav.tabs button {
+    appearance: none; border: 1px solid var(--line); background: var(--bg2);
+    color: var(--muted); padding: 0.5rem 0.9rem; border-radius: 999px;
+    font: inherit; font-size: 0.92rem; cursor: pointer;
+  }
+  nav.tabs button:hover { color: var(--text); border-color: var(--teal); }
+  nav.tabs button.active {
+    background: linear-gradient(135deg, #1a6b5c, #1a5f8a);
+    color: #fff; border-color: transparent; font-weight: 600;
+  }
+  .panel {
+    display: none; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 0.95rem;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  }
+  .panel.active { display: block; }
+  .hint { color: var(--muted); margin: 0 0 0.85rem; font-size: 0.9rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+  th {
+    text-align: left; color: var(--teal); font-weight: 600; font-size: 0.78rem;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 0.55rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: middle; }
+  tr:hover td { background: rgba(46, 196, 182, 0.06); }
+  .wx { display: flex; align-items: center; gap: 0.65rem; }
+  .wx .emoji {
+    width: 2.4rem; height: 2.4rem; display: grid; place-items: center;
+    font-size: 1.55rem; line-height: 1;
+    background: rgba(46, 196, 182, 0.12);
+    border: 1px solid var(--line); border-radius: 10px; flex: 0 0 auto;
+  }
+  .wx .label { font-weight: 600; }
+  .wx .detail { color: var(--muted); font-size: 0.85rem; }
+  .temp { font-weight: 700; font-variant-numeric: tabular-nums; color: #b8ffe0; font-size: 1.05rem; }
+  .pill {
+    display: inline-block; min-width: 2.8rem; text-align: center;
+    background: rgba(77, 163, 255, 0.15); color: #9fd0ff;
+    border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.88rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .day-row {
+    display: grid; grid-template-columns: 6.5rem 1.45fr 1.05fr 7rem;
+    gap: 0.65rem; align-items: center; padding: 0.65rem 0.25rem;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .day-name { font-weight: 650; }
+  .day-temps { display: flex; align-items: center; gap: 0.45rem; font-variant-numeric: tabular-nums; }
+  .lo { color: var(--muted); width: 2.2rem; text-align: right; }
+  .hi { font-weight: 700; width: 2.2rem; color: #b8ffe0; }
+  .bar-track { flex: 1; height: 8px; background: #12343c; border-radius: 999px; position: relative; overflow: hidden; }
+  .bar-fill {
+    position: absolute; top: 0; bottom: 0; border-radius: 999px;
+    background: linear-gradient(90deg, var(--blue), var(--teal), var(--green));
+  }
+  .day-wind { color: var(--muted); font-size: 0.88rem; text-align: right; }
+  #radarMap {
+    height: min(62vh, 560px); border-radius: 12px;
+    border: 1px solid var(--line); background: #0a2028;
+  }
+  .radar-controls {
+    display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    margin-top: 0.65rem; color: var(--muted); font-size: 0.9rem;
+  }
+  .radar-controls .ts { color: var(--green); font-variant-numeric: tabular-nums; }
+  .creek-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0.75rem; }
+  .card {
+    background: rgba(7, 28, 34, 0.8); border: 1px solid var(--line);
+    border-radius: 12px; padding: 0.9rem 1rem;
+  }
+  .card h3 {
+    margin: 0 0 0.35rem; font-size: 0.8rem; color: var(--teal);
+    font-weight: 650; letter-spacing: 0.03em; text-transform: uppercase;
+  }
+  .big { font-size: 2.2rem; font-weight: 750; letter-spacing: -0.03em; color: var(--green); line-height: 1; }
+  .badge {
+    display: inline-block; margin-top: 0.55rem; padding: 0.2rem 0.55rem;
+    border-radius: 999px; font-size: 0.8rem; font-weight: 650;
+  }
+  .badge.ok { background: rgba(61,255,168,0.12); color: var(--green); }
+  .badge.action { background: rgba(240,193,77,0.15); color: var(--warn); }
+  .badge.minor, .badge.moderate, .badge.major { background: rgba(255,107,122,0.15); color: var(--bad); }
+  .gauge { margin-top: 0.85rem; height: 12px; background: #12343c; border-radius: 999px; overflow: hidden; }
+  .gauge-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--teal), var(--blue), var(--bad)); }
+  .gauge-marks { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.75rem; margin-top: 0.3rem; }
+  .links a { color: var(--blue); text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+  .impact-list { margin: 0.4rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: 0.9rem; }
+  .hydro { width: 100%; margin-top: 0.75rem; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+  footer { margin-top: 1rem; color: var(--muted); font-size: 0.8rem; text-align: center; }
+  @media (max-width: 780px) {
+    .day-row { grid-template-columns: 1fr; }
+    .creek-grid { grid-template-columns: 1fr; }
+    .day-wind { text-align: left; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Manhattan, KS</h1>
+      <div class="sub">
+        Hourly · 10-day · Radar · Wildcat Creek · <span id="generated"></span>
+        <span id="liveBadge" class="stale">snapshot</span>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="active" data-tab="hourly">Hourly</button>
+      <button data-tab="tenday">10-day</button>
+      <button data-tab="radar">Radar</button>
+      <button data-tab="creek">Wildcat Creek</button>
+    </nav>
+
+    <section id="hourly" class="panel active"></section>
+    <section id="tenday" class="panel"></section>
+    <section id="radar" class="panel">
+      <p class="hint">Animated rain radar (past + short nowcast). Plays automatically.</p>
+      <div id="radarMap"></div>
+      <div class="radar-controls">
+        <span>Frame: <strong class="ts" id="radarTime">loading…</strong></span>
+        <span id="radarStatus">starting</span>
+      </div>
+    </section>
+    <section id="creek" class="panel"></section>
+
+    <footer>NWS hourly · MET Norway 10-day · USGS creek · RainViewer radar</footer>
+  </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const SNAP = {"generated": "Sun Aug 23 \u00b7 3:50 PM CT", "hourly": [{"t": "Sun 3 PM", "temp": 76, "label": "Rain", "emoji": "\ud83c\udf27\ufe0f", "detail": "Slight Chance Rain Showers", "rain": 22, "wind": "5 mph SE"}, {"t": "Sun 4 PM", "temp": 77, "label": "Rain", "emoji": "\ud83c\udf27\ufe0f", "detail": "Slight Chance Rain Showers", "rain": 20, "wind": "5 mph SE"}, {"t": "Sun 5 PM", "temp": 79, "label": "Rain", "emoji": "\ud83c\udf27\ufe0f", "detail": "Slight Chance Rain Showers", "rain": 17, "wind": "5 mph E"}, {"t": "Sun 6 PM", "temp": 78, "label": "Rain", "emoji": "\ud83c\udf27\ufe0f", "detail": "Slight Chance Rain Showers", "rain": 15, "wind": "10 mph E"}, {"t": "Sun 7 PM", "temp": 77, "label": "Partly cloudy", "emoji": "\u26c5", "detail": "Partly Cloudy", "rain": 3, "wind": "10 mph E"}, {"t": "Sun 8 PM", "temp": 76, "label": "Mostly sunny", "emoji": "\ud83c\udf24\ufe0f", "detail": "Mostly Clear", "rain": 3, "wind": "5 mph E"}, {"t": "Sun 9 PM", "temp": 74, "label": "Partly cloudy", "emoji": "\u26c5", "detail": "Partly Cloudy", "rain": 4, "wind": "5 mph E"}, {"t": "Sun 10 PM", "temp": 72, "label": "Partly cloudy", "emoji": "\u26c5", "detail": "Partly Cloudy", "rain": 8, "wind": "5 mph E"}, {"t": "Sun 11 PM", "temp": 71, "label": "Partly cloudy", "emoji": "\u26c5", "detail": "Partly Cloudy", "rain": 10, "wind": "5 mph E"}, {"t": "Mon 12 AM", "temp": 70, "label": "Cloudy", "emoji": "\u2601\ufe0f", "detail": "Mostly Cloudy", "rain": 12, "wind": "5 mph E"}, {"t": "Mon 1 AM", "temp": 69, "label": "Storms", "emoji": "\u26c8\ufe0f", "detail": "Chance Showers And Thunderstorms", "rain": 25, "wind": "5 mph E"}, {"t": "Mon 2 AM", "temp": 69, "label": "Storms", "emoji": "\u26c8\ufe0f", "detail": "Chance Showers And Thunderstorms", "rain": 30, "wind": "5 mph E"}, {"t": "Mon 3 AM", "temp": 68, "label": "Storms", "emoji": "\u26c8\ufe0f", "detail": "Chance Showers And Thunderstorms", "rain": 37, "wind": "5 mph E"}, {"t": "Mon 4 AM", "temp": 67, "label": "Storms", "emoji": "\u26c8\ufe0f", "detail": "Chance Showers And Thunderstorms", "rain": 36, "wind": "5 mph E"}, {"t": "Mon 5 AM", "temp": 66, "label": "Storms", "emoji": "\u26c8\ufe0f", "detail": "Chance Showers And Thunderstorms", "rain": 29, "wind": "5 mph E"}, {"t": "Mon 6 AM", "temp": 65, "label": "Storms", "emoji": "\u26c8\ufe0f", "detail": "Slight Chance Showers And Thunderstorms", "rain": 21, "wind": "5 mph E"}, {"t": "Mon 7 AM", "temp": 65, "label": "Storms", "emoji": "\u26c8\ufe0f", "detail": "Slight Chance Showers And Thunderstorms", "rain": 16, "wind": "5 mph E"}, {"t": "Mon 8 AM", "temp": 66, "label": "Partly cloudy", "emoji": "\u26c5", "detail": "Partly Sunny", "rain": 12, "wind": "5 mph E"}, {"t": "Mon 9 AM", "temp": 67, "label": "Mostly sunny", "emoji": "\ud83c\udf24\ufe0f", "detail": "Mostly Sunny", "rain": 8, "wind": "5 mph E"}, {"t": "Mon 10 AM", "temp": 71, "label": "Partly cloudy", "emoji": "\u26c5", "detail": "Partly Sunny", "rain": 4, "wind": "5 mph SE"}, {"t": "Mon 11 AM", "temp": 74, "label": "Partly cloudy", "emoji": "\u26c5", "detail": "Partly Sunny", "rain": 2, "wind": "5 mph SE"}, {"t": "Mon 12 PM", "temp": 78, "label": "Partly cloudy", "emoji": "\u26c5", "detail": "Partly Sunny", "rain": 2, "wind": "5 mph SE"}, {"t": "Mon 1 PM", "temp": 81, "label": "Mostly sunny", "emoji": "\ud83c\udf24\ufe0f", "detail": "Mostly Sunny", "rain": 1, "wind": "5 mph SE"}, {"t": "Mon 2 PM", "temp": 83, "label": "Mostly sunny", "emoji": "\ud83c\udf24\ufe0f", "detail": "Mostly Sunny", "rain": 1, "wind": "5 mph SE"}], "daily": [{"name": "Today", "date": "2026-08-23", "emoji": "\u26c5", "label": "Partly cloudy", "high": 77, "low": 69, "rain": null, "wind": "12 mph ESE"}, {"name": "Tomorrow", "date": "2026-08-24", "emoji": "\ud83c\udf24\ufe0f", "label": "Fair", "high": 84, "low": 63, "rain": null, "wind": "13 mph ESE"}, {"name": "Tue 8/25", "date": "2026-08-25", "emoji": "\u26c5", "label": "Partly cloudy", "high": 85, "low": 68, "rain": null, "wind": "10 mph ESE"}, {"name": "Wed 8/26", "date": "2026-08-26", "emoji": "\ud83c\udf2b\ufe0f", "label": "Fog", "high": 86, "low": 71, "rain": null, "wind": "6 mph WNW"}, {"name": "Thu 8/27", "date": "2026-08-27", "emoji": "\ud83c\udf24\ufe0f", "label": "Fair", "high": 85, "low": 68, "rain": null, "wind": "3 mph SE"}, {"name": "Fri 8/28", "date": "2026-08-28", "emoji": "\u2600\ufe0f", "label": "Clear", "high": 88, "low": 70, "rain": null, "wind": "12 mph SE"}, {"name": "Sat 8/29", "date": "2026-08-29", "emoji": "\u2600\ufe0f", "label": "Clear", "high": 94, "low": 78, "rain": null, "wind": "15 mph S"}, {"name": "Sun 8/30", "date": "2026-08-30", "emoji": "\ud83c\udf26\ufe0f", "label": "Showers", "high": 92, "low": 76, "rain": null, "wind": "13 mph SW"}, {"name": "Mon 8/31", "date": "2026-08-31", "emoji": "\u26c5", "label": "Partly cloudy", "high": 86, "low": 71, "rain": null, "wind": "9 mph NE"}, {"name": "Tue 9/1", "date": "2026-09-01", "emoji": "\u26c5", "label": "Partly cloudy", "high": 83, "low": 71, "rain": null, "wind": "10 mph NE"}], "creek": {"scenic": {"name": "WILDCAT C AT SCENIC DRIVE, MANHATTAN, KS", "code": "06879810", "flow": 11.4, "stage": 2.81, "when": "2026-08-23T15:15:00.000-05:00"}, "seth": {"name": "WILDCAT C AT SETH CHILDS RD, MANHATTAN, KS", "code": "06879815", "stage": 2.25, "when": "2026-08-23T15:30:00.000-05:00"}, "thresholds": {"action": 9, "minor": 14, "moderate": 17, "major": 23}, "impacts": [{"stage": 23, "statement": "Flood waters flood the road going into the Highland Ridge Apartment complex and water nearing the actual buildings. In the Garden Way area downstream of Seth Childs Road, some apartment buildings are either taking on water, or completely surrounded by flood waters. In addition extensive road and parking lot flooding occurs in the Garden Way area."}, {"stage": 22, "statement": "Water just overtops the retaining wall adjacent to the parking lot north of the Highland Ridge Apartments. The Garden Way area downstream of Seth Childs Road, the road is flooded in a couple of spots on Garden Way."}, {"stage": 17, "statement": "The low spot in Anneberg Circle is flooded with water very close to the golf course clubhouse."}, {"stage": 16, "statement": "Flood waters begin to reach North 1200 Road, commonly known as Wildcat Creek Road, just upstream of the Scenic Drive bridge."}, {"stage": 14, "statement": "Flood waters reach Poliska Lane, just north of Fort Riley Boulevard."}], "fcstActive": false, "hydro": "https://water.noaa.gov/resources/hydrographs/mwck1_hg.png"}};
+const LAT = 39.1836, LON = -96.5717;
+const CREEK_THRESHOLDS = { action: 9, minor: 14, moderate: 17, major: 23 };
+const CREEK_IMPACTS = SNAP.creek.impacts || [];
+const HYDRO_URL = 'https://water.noaa.gov/resources/hydrographs/mwck1_hg.png';
+
+const SYMBOL_MAP = {
+  clearsky: ['☀️','Clear'], fair: ['🌤️','Fair'], partlycloudy: ['⛅','Partly cloudy'],
+  cloudy: ['☁️','Cloudy'], rainshowers: ['🌦️','Showers'], rainshowersandthunder: ['⛈️','Storms'],
+  sleetshowers: ['🌧️','Sleet'], snowshowers: ['🌨️','Snow showers'], rain: ['🌧️','Rain'],
+  heavyrain: ['🌧️','Heavy rain'], heavyrainandthunder: ['⛈️','Heavy storms'],
+  sleet: ['🌧️','Sleet'], snow: ['🌨️','Snow'], snowandthunder: ['⛈️','Snow storms'],
+  fog: ['🌫️','Fog'], rainandthunder: ['⛈️','Storms'], lightrainshowers: ['🌦️','Light showers'],
+  lightrain: ['🌦️','Light rain'], lightsnow: ['🌨️','Light snow'], heavysnow: ['🌨️','Heavy snow']
+};
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function rainPill(v) { return v == null ? '—' : `${v}%`; }
+function windDir(deg) {
+  if (deg == null || Number.isNaN(+deg)) return '';
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+function fromText(s) {
+  const t = (s || '').toLowerCase();
+  if (t.includes('thunder') || t.includes('t-storm') || t.includes('storm')) return ['⛈️','Storms'];
+  if (t.includes('snow')) return ['🌨️','Snow'];
+  if (t.includes('shower') || t.includes('rain') || t.includes('drizzle')) return ['🌧️','Rain'];
+  if (t.includes('fog') || t.includes('haze')) return ['🌫️','Fog'];
+  if (t.includes('mostly sunny') || t.includes('mostly clear')) return ['🌤️','Mostly sunny'];
+  if (t.includes('partly')) return ['⛅','Partly cloudy'];
+  if (t.includes('overcast') || t.includes('cloudy')) return ['☁️','Cloudy'];
+  if (t.includes('sunny') || t.includes('clear') || t.includes('fair')) return ['☀️','Clear'];
+  return ['🌡️', (s || '—').slice(0, 28)];
+}
+function fromSymbol(code) {
+  if (!code) return ['🌡️','—'];
+  const base = String(code).split('_')[0];
+  return SYMBOL_MAP[base] || ['🌡️', base];
+}
+function setBadge(mode, text) {
+  const el = document.getElementById('liveBadge');
+  el.className = mode;
+  el.textContent = text;
+}
+function stampNow() {
+  return new Date().toLocaleString('en-US', {
+    timeZone: 'America/Chicago', weekday: 'short', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit'
+  }) + ' CT';
+}
+
+function render(data) {
+  document.getElementById('generated').textContent = data.generated;
+
+  const hrows = data.hourly.map(r => `<tr>
+    <td>${esc(r.t)}</td>
+    <td><div class="wx"><div class="emoji" title="${esc(r.detail || r.label)}">${r.emoji}</div>
+      <div><div class="label">${esc(r.label)}</div>
+      ${r.detail ? `<div class="detail">${esc(r.detail)}</div>` : ''}</div></div></td>
+    <td class="temp">${esc(r.temp)}°</td>
+    <td><span class="pill">${rainPill(r.rain)}</span></td>
+    <td>${esc(r.wind)}</td>
+  </tr>`).join('');
+  document.getElementById('hourly').innerHTML = `
+    <p class="hint">Next 24 hours.</p>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Time</th><th>Conditions</th><th>Temp</th><th>Rain</th><th>Wind</th></tr></thead>
+      <tbody>${hrows}</tbody>
+    </table></div>`;
+
+  const drows = data.daily.map(d => {
+    const left = Math.max(0, Math.min(100, (d.low - 55) / 50 * 100));
+    const width = Math.max(4, Math.min(100 - left, (d.high - d.low) / 50 * 100));
+    return `<div class="day-row">
+      <div class="day-name">${esc(d.name)}</div>
+      <div class="wx"><div class="emoji">${d.emoji}</div>
+        <div><div class="label">${esc(d.label)}</div><div class="detail">${rainPill(d.rain)} chance of rain</div></div></div>
+      <div class="day-temps"><span class="lo">${d.low}°</span><div class="bar-track"><div class="bar-fill" style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></div></div><span class="hi">${d.high}°</span></div>
+      <div class="day-wind">${esc(d.wind)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('tenday').innerHTML = `<p class="hint">${data.daily.length}-day outlook.</p>${drows}`;
+
+  const c = data.creek;
+  const t = c.thresholds || CREEK_THRESHOLDS;
+  const stage = c.scenic.stage;
+  const pct = Math.min(100, Math.max(2, (stage / t.major) * 100));
+  let label = 'Normal / low', cls = 'ok';
+  if (stage >= t.major) { label = 'Major flooding'; cls = 'major'; }
+  else if (stage >= t.moderate) { label = 'Moderate flooding'; cls = 'moderate'; }
+  else if (stage >= t.minor) { label = 'Minor flooding'; cls = 'minor'; }
+  else if (stage >= t.action) { label = 'Action stage'; cls = 'action'; }
+  const fcst = c.fcstActive ? 'Stage forecast is active on NWS MWCK1.' : 'No active stage forecast today.';
+  const impacts = (c.impacts || CREEK_IMPACTS).slice().sort((a,b)=>a.stage-b.stage)
+    .map(i => `<li><strong>${esc(i.stage)} ft</strong> — ${esc(i.statement)}</li>`).join('');
+
+  document.getElementById('creek').innerHTML = `
+    <p class="hint">${esc(fcst)} Flood stage (minor) is ${t.minor} ft at Scenic Drive.</p>
+    <div class="creek-grid">
+      <div class="card">
+        <h3>Scenic Drive · 06879810</h3>
+        <div class="big">${Number(stage).toFixed(2)} <span style="font-size:1rem;font-weight:600;color:var(--muted)">ft</span></div>
+        <div style="color:var(--muted);margin-top:0.35rem">${c.scenic.flow ?? '—'} cfs · ${esc(c.scenic.when)}</div>
+        <span class="badge ${cls}">${label}</span>
+        <div class="gauge"><div class="gauge-fill" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="gauge-marks"><span>0</span><span>Action ${t.action}</span><span>Flood ${t.minor}</span><span>Major ${t.major}</span></div>
+      </div>
+      <div class="card">
+        <h3>Seth Childs Rd · 06879815</h3>
+        <div class="big">${Number(c.seth.stage).toFixed(2)} <span style="font-size:1rem;font-weight:600;color:var(--muted)">ft</span></div>
+        <div style="color:var(--muted);margin-top:0.35rem">Gage height only · ${esc(c.seth.when)}</div>
+        <div class="links" style="margin-top:0.85rem">
+          <div><a href="https://water.noaa.gov/gauges/mwck1" target="_blank" rel="noopener">NWS MWCK1</a></div>
+          <div><a href="https://waterdata.usgs.gov/nwis/uv?site_no=06879810" target="_blank" rel="noopener">USGS Scenic Drive</a></div>
+          <div><a href="https://waterdata.usgs.gov/nwis/uv?site_no=06879815" target="_blank" rel="noopener">USGS Seth Childs</a></div>
+        </div>
+      </div>
+    </div>
+    <img class="hydro" src="${esc(c.hydro || HYDRO_URL)}?t=${Date.now()}" alt="Wildcat Creek hydrograph" loading="lazy">
+    <div class="card" style="margin-top:0.75rem">
+      <h3>Impact thresholds</h3>
+      <ul class="impact-list">${impacts}</ul>
+    </div>`;
+}
+
+async function fetchJson(url, opts) {
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error(`${url} → ${res.status}`);
+  return res.json();
+}
+
+async function loadHourlyNws() {
+  const data = await fetchJson(
+    `https://api.weather.gov/gridpoints/TOP/50,55/forecast/hourly`,
+    { headers: { Accept: 'application/geo+json', 'User-Agent': 'ManhattanWeather/2.0 (personal)' } }
+  );
+  return data.properties.periods.slice(0, 24).map(p => {
+    const t = new Date(p.startTime);
+    const [emoji, label] = fromText(p.shortForecast);
+    return {
+      t: t.toLocaleString('en-US', { timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric' }).replace(',', ''),
+      temp: p.temperature,
+      emoji, label,
+      detail: p.shortForecast,
+      rain: (p.probabilityOfPrecipitation || {}).value,
+      wind: `${p.windSpeed} ${p.windDirection}`
+    };
+  });
+}
+
+async function loadDailyMet() {
+  const data = await fetchJson(
+    `https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${LAT}&lon=${LON}`,
+    { headers: { 'User-Agent': 'ManhattanWeather/2.0 github.com/aaron personal-dashboard' } }
+  );
+  const byDay = {};
+  for (const p of data.properties.timeseries) {
+    const local = new Date(p.time);
+    const key = local.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    (byDay[key] ||= []).push(p);
+  }
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  const tom = new Date(); tom.setDate(tom.getDate() + 1);
+  const tomStr = tom.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  const days = [];
+  for (const day of Object.keys(byDay).sort()) {
+    if (days.length >= 10) break;
+    if (day < todayStr) continue;
+    const pts = byDay[day];
+    const temps = [], rains = [], winds = [], windDegs = [], symbols = [];
+    for (const p of pts) {
+      const inst = p.data.instant?.details || {};
+      if (inst.air_temperature != null) temps.push(inst.air_temperature * 9/5 + 32);
+      if (inst.wind_speed != null) winds.push(inst.wind_speed * 2.23694);
+      if (inst.wind_from_direction != null) windDegs.push(inst.wind_from_direction);
+      for (const key of ['next_6_hours','next_12_hours','next_1_hours']) {
+        const block = p.data[key];
+        if (!block) continue;
+        if (block.summary?.symbol_code) symbols.push(block.summary.symbol_code);
+        if (block.details?.probability_of_precipitation != null) {
+          rains.push(block.details.probability_of_precipitation);
+        }
+        break;
+      }
+    }
+    if (!temps.length) continue;
+    const [emoji, label] = fromSymbol(symbols[Math.floor(symbols.length / 2)]);
+    let name;
+    if (day === todayStr) name = 'Today';
+    else if (day === tomStr) name = 'Tomorrow';
+    else name = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+    const avgDir = windDegs.length ? windDir(windDegs.reduce((a,b)=>a+b,0)/windDegs.length) : '';
+    days.push({
+      name, date: day, emoji, label,
+      high: Math.round(Math.max(...temps)),
+      low: Math.round(Math.min(...temps)),
+      rain: rains.length ? Math.round(Math.max(...rains)) : null,
+      wind: winds.length ? `${Math.round(Math.max(...winds))} mph ${avgDir}`.trim() : '—'
+    });
+  }
+  return days;
+}
+
+async function loadCreekUsgs() {
+  const usgs = await fetchJson(
+    'https://waterservices.usgs.gov/nwis/iv/?sites=06879810,06879815&parameterCd=00065,00060&format=json'
+  );
+  const creek = {};
+  for (const ts of usgs.value.timeSeries) {
+    const code = ts.sourceInfo.siteCode[0].value;
+    creek[code] = creek[code] || { name: ts.sourceInfo.siteName, code };
+    const v = ts.values[0].value[0];
+    const varCode = ts.variable.variableCode[0].value;
+    if (varCode === '00065') { creek[code].stage = parseFloat(v.value); creek[code].when = v.dateTime; }
+    if (varCode === '00060') { creek[code].flow = parseFloat(v.value); }
+  }
+  let fcstActive = false;
+  try {
+    const mw = await fetchJson('https://api.water.noaa.gov/nwps/v1/gauges/mwck1');
+    fcstActive = mw.status?.forecast?.floodCategory !== 'fcst_not_current';
+  } catch (_) {}
+  return {
+    scenic: creek['06879810'],
+    seth: creek['06879815'],
+    thresholds: CREEK_THRESHOLDS,
+    impacts: CREEK_IMPACTS,
+    fcstActive,
+    hydro: HYDRO_URL
+  };
+}
+
+let state = JSON.parse(JSON.stringify(SNAP));
+
+async function refreshLive() {
+  if (location.protocol === 'file:') {
+    setBadge('err', 'serve over http for live');
+    return;
+  }
+  setBadge('stale', 'updating…');
+  const results = await Promise.allSettled([
+    loadHourlyNws(),
+    loadDailyMet(),
+    loadCreekUsgs()
+  ]);
+  const [h, d, c] = results;
+  let ok = 0;
+  if (h.status === 'fulfilled') { state.hourly = h.value; ok++; }
+  else console.warn('hourly failed', h.reason);
+  if (d.status === 'fulfilled') { state.daily = d.value; ok++; }
+  else console.warn('daily failed', d.reason);
+  if (c.status === 'fulfilled') { state.creek = c.value; ok++; }
+  else console.warn('creek failed', c.reason);
+
+  if (ok === 0) {
+    setBadge('err', 'snapshot (live failed)');
+    return;
+  }
+  state.generated = stampNow();
+  render(state);
+  if (ok === 3) setBadge('', 'live');
+  else setBadge('stale', `live (${ok}/3)`);
+}
+
+render(state);
+setBadge('stale', location.protocol === 'file:' ? 'snapshot (file://)' : 'snapshot');
+setTimeout(refreshLive, 50);
+setInterval(refreshLive, 10 * 60 * 1000);
+
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav.tabs button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'radar') setTimeout(() => radarMap && radarMap.invalidateSize(), 50);
+  });
+});
+
+let radarMap, radarLayers = [], radarTimer = null, radarIdx = 0, radarFrames = [];
+async function startRadar() {
+  const status = document.getElementById('radarStatus');
+  try {
+    radarMap = L.map('radarMap', {
+      zoomControl: true, attributionControl: true, minZoom: 4, maxZoom: 10
+    }).setView([LAT, LON], 7);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 10
+    }).addTo(radarMap);
+    L.circleMarker([LAT, LON], {
+      radius: 6, color: '#3dffa8', fillColor: '#3dffa8', fillOpacity: 0.9, weight: 2
+    }).addTo(radarMap).bindTooltip('Manhattan');
+
+    const data = await fetchJson('https://api.rainviewer.com/public/weather-maps.json');
+    const host = data.host;
+    const past = data.radar.past || [];
+    const nowcast = data.radar.nowcast || [];
+    radarFrames = past.concat(nowcast);
+    if (!radarFrames.length) { status.textContent = 'no radar frames'; return; }
+
+    radarFrames.forEach((f) => {
+      const layer = L.tileLayer(host + f.path + '/256/{z}/{x}/{y}/2/1_1.png', {
+        opacity: 0, zIndex: 10, maxNativeZoom: 7, maxZoom: 10, tileSize: 256
+      });
+      layer.addTo(radarMap);
+      radarLayers.push(layer);
+    });
+
+    function show(i) {
+      radarLayers.forEach((layer, j) => layer.setOpacity(j === i ? 0.75 : 0));
+      const ts = new Date(radarFrames[i].time * 1000);
+      document.getElementById('radarTime').textContent = ts.toLocaleString('en-US', {
+        timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric', minute: '2-digit'
+      });
+      status.textContent = i >= past.length ? 'nowcast' : 'observed';
+    }
+    radarIdx = Math.max(0, past.length - 1);
+    show(radarIdx);
+    radarTimer = setInterval(() => {
+      radarIdx = (radarIdx + 1) % radarFrames.length;
+      show(radarIdx);
+    }, 450);
+  } catch (e) {
+    status.textContent = 'radar failed to load';
+    console.error(e);
+  }
+}
+startRadar();
+</script>
+</body>
+</html>
