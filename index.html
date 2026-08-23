@@ -64,15 +64,7 @@
   }
   .panel.active { display: block; }
   .hint { color: var(--muted); margin: 0 0 0.85rem; font-size: 0.9rem; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-  th {
-    text-align: left; color: var(--teal); font-weight: 600; font-size: 0.78rem;
-    text-transform: uppercase; letter-spacing: 0.04em;
-    padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--line);
-  }
-  td { padding: 0.55rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: middle; }
-  tr:hover td { background: rgba(46, 196, 182, 0.06); }
-  .wx { display: flex; align-items: center; gap: 0.65rem; }
+  .wx { display: flex; align-items: center; gap: 0.65rem; min-width: 0; }
   .wx .emoji {
     width: 2.4rem; height: 2.4rem; display: grid; place-items: center;
     font-size: 1.55rem; line-height: 1;
@@ -88,21 +80,55 @@
     border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.88rem;
     font-variant-numeric: tabular-nums;
   }
+  .day-group {
+    color: var(--teal); font-size: 0.78rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    margin: 0.85rem 0 0.35rem; padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .day-group:first-child { margin-top: 0; }
+  .hour-card {
+    display: grid;
+    grid-template-columns: 4.2rem 1fr auto;
+    gap: 0.55rem 0.75rem;
+    align-items: center;
+    padding: 0.7rem 0.15rem;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .hour-card .time {
+    font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text);
+  }
+  .hour-card .metrics {
+    display: flex; flex-wrap: wrap; gap: 0.35rem 0.55rem;
+    justify-content: flex-end; align-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .hour-card .wind {
+    color: var(--muted); font-size: 0.88rem; white-space: nowrap;
+  }
   .day-row {
-    display: grid; grid-template-columns: 6.5rem 1.45fr 1.05fr 7rem;
-    gap: 0.65rem; align-items: center; padding: 0.65rem 0.25rem;
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1.3fr) minmax(7rem, 1fr);
+    gap: 0.55rem 0.75rem;
+    align-items: center;
+    padding: 0.75rem 0.15rem;
     border-bottom: 1px solid rgba(255,255,255,0.06);
   }
   .day-name { font-weight: 650; }
   .day-temps { display: flex; align-items: center; gap: 0.45rem; font-variant-numeric: tabular-nums; }
-  .lo { color: var(--muted); width: 2.2rem; text-align: right; }
-  .hi { font-weight: 700; width: 2.2rem; color: #b8ffe0; }
-  .bar-track { flex: 1; height: 8px; background: #12343c; border-radius: 999px; position: relative; overflow: hidden; }
+  .lo { color: var(--muted); width: 2.2rem; text-align: right; flex: 0 0 auto; }
+  .hi { font-weight: 700; width: 2.2rem; color: #b8ffe0; flex: 0 0 auto; }
+  .bar-track { flex: 1; height: 8px; background: #12343c; border-radius: 999px; position: relative; overflow: hidden; min-width: 2.5rem; }
   .bar-fill {
     position: absolute; top: 0; bottom: 0; border-radius: 999px;
     background: linear-gradient(90deg, var(--blue), var(--teal), var(--green));
   }
-  .day-wind { color: var(--muted); font-size: 0.88rem; text-align: right; }
+  .day-meta {
+    grid-column: 1 / -1;
+    display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem;
+    color: var(--muted); font-size: 0.88rem;
+  }
+  .day-wind { color: var(--muted); font-size: 0.88rem; }
   #radarMap {
     height: min(62vh, 560px); border-radius: 12px;
     border: 1px solid var(--line); background: #0a2028;
@@ -138,9 +164,34 @@
   .hydro { width: 100%; margin-top: 0.75rem; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
   footer { margin-top: 1rem; color: var(--muted); font-size: 0.8rem; text-align: center; }
   @media (max-width: 780px) {
-    .day-row { grid-template-columns: 1fr; }
+    header h1 { font-size: 1.35rem; }
+    header .sub { font-size: 0.82rem; }
+    nav.tabs { gap: 0.35rem; }
+    nav.tabs button { padding: 0.45rem 0.7rem; font-size: 0.86rem; }
+    .hour-card {
+      grid-template-columns: 3.6rem minmax(0, 1fr);
+      grid-template-areas:
+        "time wx"
+        "time metrics";
+    }
+    .hour-card .time { grid-area: time; align-self: start; padding-top: 0.15rem; }
+    .hour-card .wx { grid-area: wx; }
+    .hour-card .metrics {
+      grid-area: metrics;
+      justify-content: flex-start;
+    }
+    .day-row {
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-areas:
+        "name wx"
+        "temps temps"
+        "meta meta";
+    }
+    .day-name { grid-area: name; align-self: center; }
+    .day-row > .wx { grid-area: wx; }
+    .day-temps { grid-area: temps; }
+    .day-meta { grid-area: meta; }
     .creek-grid { grid-template-columns: 1fr; }
-    .day-wind { text-align: left; }
   }
 </style>
 </head>
@@ -198,6 +249,24 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function rainPill(v) { return v == null ? '—' : `${v}%`; }
+
+function splitTimeLabel(s) {
+  const m = String(s || '').trim().match(/^([A-Za-z]{3})\s+(.+)$/);
+  if (m) return { day: m[1], clock: m[2] };
+  return { day: '', clock: String(s || '') };
+}
+function condLines(label, detail) {
+  const l = (label || '').trim();
+  const d = (detail || '').trim();
+  if (!d) return { label: l, detail: '' };
+  const norm = (x) => x.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (norm(l) === norm(d) || norm(d).includes(norm(l)) && norm(d).length < norm(l).length + 8) {
+    // Prefer the longer/more specific NWS phrase when nearly the same
+    return { label: d.length >= l.length ? d : l, detail: '' };
+  }
+  return { label: l, detail: d };
+}
+
 function windDir(deg) {
   if (deg == null || Number.isNaN(+deg)) return '';
   const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
@@ -235,31 +304,41 @@ function stampNow() {
 function render(data) {
   document.getElementById('generated').textContent = data.generated;
 
-  const hrows = data.hourly.map(r => `<tr>
-    <td>${esc(r.t)}</td>
-    <td><div class="wx"><div class="emoji" title="${esc(r.detail || r.label)}">${r.emoji}</div>
-      <div><div class="label">${esc(r.label)}</div>
-      ${r.detail ? `<div class="detail">${esc(r.detail)}</div>` : ''}</div></div></td>
-    <td class="temp">${esc(r.temp)}°</td>
-    <td><span class="pill">${rainPill(r.rain)}</span></td>
-    <td>${esc(r.wind)}</td>
-  </tr>`).join('');
+  let lastDay = '';
+  const hparts = [];
+  for (const r of data.hourly) {
+    const { day, clock } = splitTimeLabel(r.t);
+    if (day && day !== lastDay) {
+      lastDay = day;
+      hparts.push(`<div class="day-group">${esc(day)}</div>`);
+    }
+    const c = condLines(r.label, r.detail);
+    hparts.push(`<div class="hour-card">
+      <div class="time">${esc(clock || r.t)}</div>
+      <div class="wx"><div class="emoji" title="${esc(r.detail || r.label)}">${r.emoji}</div>
+        <div><div class="label">${esc(c.label)}</div>
+        ${c.detail ? `<div class="detail">${esc(c.detail)}</div>` : ''}</div></div>
+      <div class="metrics">
+        <span class="temp">${esc(r.temp)}°</span>
+        <span class="pill">${rainPill(r.rain)}</span>
+        <span class="wind">${esc(r.wind)}</span>
+      </div>
+    </div>`);
+  }
   document.getElementById('hourly').innerHTML = `
-    <p class="hint">Next 24 hours.</p>
-    <div style="overflow-x:auto"><table>
-      <thead><tr><th>Time</th><th>Conditions</th><th>Temp</th><th>Rain</th><th>Wind</th></tr></thead>
-      <tbody>${hrows}</tbody>
-    </table></div>`;
+    <p class="hint">Next 24 hours · temp · rain % · wind</p>
+    <div class="hour-list">${hparts.join('')}</div>`;
 
   const drows = data.daily.map(d => {
     const left = Math.max(0, Math.min(100, (d.low - 55) / 50 * 100));
     const width = Math.max(4, Math.min(100 - left, (d.high - d.low) / 50 * 100));
+    const rain = d.rain == null ? '—' : `${d.rain}% rain`;
     return `<div class="day-row">
       <div class="day-name">${esc(d.name)}</div>
       <div class="wx"><div class="emoji">${d.emoji}</div>
-        <div><div class="label">${esc(d.label)}</div><div class="detail">${rainPill(d.rain)} chance of rain</div></div></div>
+        <div><div class="label">${esc(d.label)}</div></div></div>
       <div class="day-temps"><span class="lo">${d.low}°</span><div class="bar-track"><div class="bar-fill" style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></div></div><span class="hi">${d.high}°</span></div>
-      <div class="day-wind">${esc(d.wind)}</div>
+      <div class="day-meta"><span>${esc(rain)}</span><span class="day-wind">${esc(d.wind)}</span></div>
     </div>`;
   }).join('');
   document.getElementById('tenday').innerHTML = `<p class="hint">${data.daily.length}-day outlook.</p>${drows}`;
