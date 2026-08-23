@@ -65,53 +65,56 @@
   .panel.active { display: block; }
   .hint { color: var(--muted); margin: 0 0 0.85rem; font-size: 0.9rem; }
   .wx { display: flex; align-items: center; gap: 0.65rem; min-width: 0; }
+  .wx { gap: 0.45rem; }
   .wx .emoji {
-    width: 2.4rem; height: 2.4rem; display: grid; place-items: center;
-    font-size: 1.55rem; line-height: 1;
+    width: 1.9rem; height: 1.9rem; display: grid; place-items: center;
+    font-size: 1.2rem; line-height: 1;
     background: rgba(46, 196, 182, 0.12);
-    border: 1px solid var(--line); border-radius: 10px; flex: 0 0 auto;
+    border: 1px solid var(--line); border-radius: 8px; flex: 0 0 auto;
   }
-  .wx .label { font-weight: 600; }
-  .wx .detail { color: var(--muted); font-size: 0.85rem; }
-  .temp { font-weight: 700; font-variant-numeric: tabular-nums; color: #b8ffe0; font-size: 1.05rem; }
+  .wx .label { font-weight: 600; font-size: 0.95rem; line-height: 1.2; }
+  .wx .detail { color: var(--muted); font-size: 0.78rem; line-height: 1.2; }
+  /* keep rows tight: hide secondary condition line */
+  .hour-card .wx .detail, .day-row .wx .detail { display: none; }
+  .temp { font-weight: 700; font-variant-numeric: tabular-nums; color: #b8ffe0; font-size: 1rem; }
   .pill {
-    display: inline-block; min-width: 2.8rem; text-align: center;
+    display: inline-block; min-width: 2.4rem; text-align: center;
     background: rgba(77, 163, 255, 0.15); color: #9fd0ff;
-    border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.88rem;
+    border-radius: 999px; padding: 0.05rem 0.4rem; font-size: 0.8rem;
     font-variant-numeric: tabular-nums;
   }
   .day-group {
-    color: var(--teal); font-size: 0.78rem; font-weight: 700;
+    color: var(--teal); font-size: 0.72rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.04em;
-    margin: 0.85rem 0 0.35rem; padding-bottom: 0.25rem;
+    margin: 0.55rem 0 0.15rem; padding-bottom: 0.15rem;
     border-bottom: 1px solid var(--line);
   }
   .day-group:first-child { margin-top: 0; }
   .hour-card {
     display: grid;
-    grid-template-columns: 4.2rem 1fr auto;
-    gap: 0.55rem 0.75rem;
+    grid-template-columns: 3.6rem 1fr auto;
+    gap: 0.25rem 0.55rem;
     align-items: center;
-    padding: 0.7rem 0.15rem;
+    padding: 0.42rem 0.1rem;
     border-bottom: 1px solid rgba(255,255,255,0.06);
   }
   .hour-card .time {
     font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text);
   }
   .hour-card .metrics {
-    display: flex; flex-wrap: wrap; gap: 0.35rem 0.55rem;
+    display: flex; flex-wrap: nowrap; gap: 0.35rem 0.45rem;
     justify-content: flex-end; align-items: center;
     font-variant-numeric: tabular-nums;
   }
   .hour-card .wind {
-    color: var(--muted); font-size: 0.88rem; white-space: nowrap;
+    color: var(--muted); font-size: 0.82rem; white-space: nowrap;
   }
   .day-row {
     display: grid;
-    grid-template-columns: 5.5rem minmax(0, 1.3fr) minmax(7rem, 1fr);
-    gap: 0.55rem 0.75rem;
+    grid-template-columns: 4.8rem minmax(0, 1.2fr) minmax(6.5rem, 1fr);
+    gap: 0.25rem 0.55rem;
     align-items: center;
-    padding: 0.75rem 0.15rem;
+    padding: 0.45rem 0.1rem;
     border-bottom: 1px solid rgba(255,255,255,0.06);
   }
   .day-name { font-weight: 650; }
@@ -125,10 +128,10 @@
   }
   .day-meta {
     grid-column: 1 / -1;
-    display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem;
-    color: var(--muted); font-size: 0.88rem;
+    display: flex; flex-wrap: wrap; gap: 0.2rem 0.65rem;
+    color: var(--muted); font-size: 0.8rem;
   }
-  .day-wind { color: var(--muted); font-size: 0.88rem; }
+  .day-wind { color: var(--muted); font-size: 0.8rem; }
   #radarMap {
     height: min(62vh, 560px); border-radius: 12px;
     border: 1px solid var(--line); background: #0a2028;
@@ -164,33 +167,42 @@
   .hydro { width: 100%; margin-top: 0.75rem; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
   footer { margin-top: 1rem; color: var(--muted); font-size: 0.8rem; text-align: center; }
   @media (max-width: 780px) {
-    header h1 { font-size: 1.35rem; }
-    header .sub { font-size: 0.82rem; }
-    nav.tabs { gap: 0.35rem; }
-    nav.tabs button { padding: 0.45rem 0.7rem; font-size: 0.86rem; }
+    .wrap { padding: 0.85rem 0.75rem 1.5rem; }
+    .panel { padding: 0.7rem; }
+    .hint { margin: 0 0 0.45rem; font-size: 0.82rem; }
+    header h1 { font-size: 1.25rem; }
+    header .sub { font-size: 0.78rem; }
+    header { margin-bottom: 0.55rem; }
+    nav.tabs { gap: 0.3rem; margin: 0.55rem 0 0.55rem; }
+    nav.tabs button { padding: 0.4rem 0.62rem; font-size: 0.82rem; }
     .hour-card {
-      grid-template-columns: 3.6rem minmax(0, 1fr);
-      grid-template-areas:
-        "time wx"
-        "time metrics";
+      grid-template-columns: 3.2rem minmax(0, 1fr) auto;
+      grid-template-areas: "time wx metrics";
+      gap: 0.2rem 0.45rem;
+      padding: 0.38rem 0;
     }
-    .hour-card .time { grid-area: time; align-self: start; padding-top: 0.15rem; }
+    .hour-card .time { grid-area: time; font-size: 0.9rem; }
     .hour-card .wx { grid-area: wx; }
     .hour-card .metrics {
       grid-area: metrics;
-      justify-content: flex-start;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.12rem;
+      justify-content: center;
     }
+    .hour-card .wind { font-size: 0.75rem; }
     .day-row {
-      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-columns: 4.2rem minmax(0, 1fr) auto;
       grid-template-areas:
-        "name wx"
-        "temps temps"
-        "meta meta";
+        "name wx temps"
+        "meta meta meta";
+      gap: 0.15rem 0.45rem;
+      padding: 0.4rem 0;
     }
-    .day-name { grid-area: name; align-self: center; }
+    .day-name { grid-area: name; align-self: center; font-size: 0.9rem; }
     .day-row > .wx { grid-area: wx; }
-    .day-temps { grid-area: temps; }
-    .day-meta { grid-area: meta; }
+    .day-temps { grid-area: temps; min-width: 7.5rem; }
+    .day-meta { grid-area: meta; margin-top: 0.05rem; }
     .creek-grid { grid-template-columns: 1fr; }
   }
 </style>
@@ -326,7 +338,7 @@ function render(data) {
     </div>`);
   }
   document.getElementById('hourly').innerHTML = `
-    <p class="hint">Next 24 hours · temp · rain % · wind</p>
+    <p class="hint">Next 24 hours</p>
     <div class="hour-list">${hparts.join('')}</div>`;
 
   const drows = data.daily.map(d => {
