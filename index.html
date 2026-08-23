@@ -90,31 +90,46 @@
     border-bottom: 1px solid var(--line);
   }
   .day-group:first-child { margin-top: 0; }
+  .hour-list.desktop-table { display: none; }
   .hour-card {
     display: grid;
-    grid-template-columns: 3.6rem 1fr auto;
-    gap: 0.25rem 0.55rem;
+    grid-template-columns: 3.6rem minmax(0, 1fr) auto auto;
+    gap: 0.35rem 0.65rem;
     align-items: center;
-    padding: 0.42rem 0.1rem;
+    padding: 0.45rem 0.1rem;
     border-bottom: 1px solid rgba(255,255,255,0.06);
   }
   .hour-card .time {
     font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text);
   }
-  .hour-card .metrics {
-    display: flex; flex-wrap: nowrap; gap: 0.35rem 0.45rem;
-    justify-content: flex-end; align-items: center;
-    font-variant-numeric: tabular-nums;
+  .hour-card .submetrics {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 0.08rem;
+    font-variant-numeric: tabular-nums; min-width: 3.6rem;
   }
   .hour-card .wind {
-    color: var(--muted); font-size: 0.82rem; white-space: nowrap;
+    color: var(--muted); font-size: 0.78rem; white-space: nowrap;
   }
+  .hour-card .temp {
+    font-size: 1.05rem; min-width: 2.6rem; text-align: right;
+  }
+  /* Desktop: classic table */
+  table.hour-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+  table.hour-table th {
+    text-align: left; color: var(--teal); font-weight: 600; font-size: 0.78rem;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--line);
+  }
+  table.hour-table td {
+    padding: 0.5rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.06);
+    vertical-align: middle;
+  }
+  table.hour-table tr:hover td { background: rgba(46, 196, 182, 0.06); }
   .day-row {
     display: grid;
-    grid-template-columns: 4.8rem minmax(0, 1.2fr) minmax(6.5rem, 1fr);
-    gap: 0.25rem 0.55rem;
+    grid-template-columns: 7.5rem minmax(0, 1.35fr) minmax(8rem, 1fr) 5rem 6.2rem;
+    gap: 0.45rem 0.65rem;
     align-items: center;
-    padding: 0.45rem 0.1rem;
+    padding: 0.55rem 0.15rem;
     border-bottom: 1px solid rgba(255,255,255,0.06);
   }
   .day-name { font-weight: 650; }
@@ -127,11 +142,11 @@
     background: linear-gradient(90deg, var(--blue), var(--teal), var(--green));
   }
   .day-meta {
-    grid-column: 1 / -1;
-    display: flex; flex-wrap: wrap; gap: 0.2rem 0.65rem;
-    color: var(--muted); font-size: 0.8rem;
+    display: none;
   }
-  .day-wind { color: var(--muted); font-size: 0.8rem; }
+  .day-wind { color: var(--muted); font-size: 0.88rem; text-align: right; }
+  .day-rain { color: var(--muted); font-size: 0.88rem; }
+
   #radarMap {
     height: min(62vh, 560px); border-radius: 12px;
     border: 1px solid var(--line); background: #0a2028;
@@ -175,35 +190,51 @@
     header { margin-bottom: 0.55rem; }
     nav.tabs { gap: 0.3rem; margin: 0.55rem 0 0.55rem; }
     nav.tabs button { padding: 0.4rem 0.62rem; font-size: 0.82rem; }
+
+    .hour-list.desktop-table { display: none !important; }
+    .hour-list.mobile-cards { display: block !important; }
+
     .hour-card {
-      grid-template-columns: 3.2rem minmax(0, 1fr) auto;
-      grid-template-areas: "time wx metrics";
-      gap: 0.2rem 0.45rem;
-      padding: 0.38rem 0;
+      grid-template-columns: 3.2rem minmax(0, 1fr) auto auto;
+      gap: 0.2rem 0.5rem;
+      padding: 0.4rem 0;
     }
-    .hour-card .time { grid-area: time; font-size: 0.9rem; }
-    .hour-card .wx { grid-area: wx; }
-    .hour-card .metrics {
-      grid-area: metrics;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 0.12rem;
-      justify-content: center;
+    .hour-card .temp {
+      font-size: 1.1rem;
+      min-width: 2.8rem;
+      align-self: center;
     }
-    .hour-card .wind { font-size: 0.75rem; }
+    .hour-card .submetrics { min-width: 3.4rem; }
+    .hour-card .wx .detail { display: none; }
+
     .day-row {
-      grid-template-columns: 4.2rem minmax(0, 1fr) auto;
+      grid-template-columns: 6.2rem minmax(0, 1fr) auto;
       grid-template-areas:
         "name wx temps"
         "meta meta meta";
-      gap: 0.15rem 0.45rem;
-      padding: 0.4rem 0;
+      gap: 0.15rem 0.5rem;
+      padding: 0.42rem 0;
     }
-    .day-name { grid-area: name; align-self: center; font-size: 0.9rem; }
+    .day-name { grid-area: name; font-size: 0.92rem; }
     .day-row > .wx { grid-area: wx; }
-    .day-temps { grid-area: temps; min-width: 7.5rem; }
-    .day-meta { grid-area: meta; margin-top: 0.05rem; }
+    .day-temps { grid-area: temps; min-width: 7.2rem; }
+    .day-meta {
+      grid-area: meta;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.2rem 0.65rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .day-row > .day-rain,
+    .day-row > .day-wind { display: none; }
     .creek-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (min-width: 781px) {
+    .hour-list.mobile-cards { display: none !important; }
+    .hour-list.desktop-table { display: block !important; }
+    .day-meta { display: none !important; }
   }
 </style>
 </head>
@@ -261,6 +292,11 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function rainPill(v) { return v == null ? '—' : `${v}%`; }
+function weekdayName(dateStr) {
+  // dateStr: YYYY-MM-DD in America/Chicago calendar sense
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/Chicago' });
+}
 
 function splitTimeLabel(s) {
   const m = String(s || '').trim().match(/^([A-Za-z]{3})\s+(.+)$/);
@@ -317,43 +353,62 @@ function render(data) {
   document.getElementById('generated').textContent = data.generated;
 
   let lastDay = '';
-  const hparts = [];
+  const cards = [];
+  const trows = [];
   for (const r of data.hourly) {
     const { day, clock } = splitTimeLabel(r.t);
     if (day && day !== lastDay) {
       lastDay = day;
-      hparts.push(`<div class="day-group">${esc(day)}</div>`);
+      cards.push(`<div class="day-group">${esc(day)}</div>`);
     }
     const c = condLines(r.label, r.detail);
-    hparts.push(`<div class="hour-card">
-      <div class="time">${esc(clock || r.t)}</div>
+    const time = clock || r.t;
+    cards.push(`<div class="hour-card">
+      <div class="time">${esc(time)}</div>
       <div class="wx"><div class="emoji" title="${esc(r.detail || r.label)}">${r.emoji}</div>
         <div><div class="label">${esc(c.label)}</div>
         ${c.detail ? `<div class="detail">${esc(c.detail)}</div>` : ''}</div></div>
-      <div class="metrics">
-        <span class="temp">${esc(r.temp)}°</span>
+      <div class="submetrics">
         <span class="pill">${rainPill(r.rain)}</span>
         <span class="wind">${esc(r.wind)}</span>
       </div>
+      <div class="temp">${esc(r.temp)}°</div>
     </div>`);
+    trows.push(`<tr>
+      <td>${esc(r.t)}</td>
+      <td><div class="wx"><div class="emoji">${r.emoji}</div>
+        <div><div class="label">${esc(c.label)}</div>
+        ${c.detail ? `<div class="detail">${esc(c.detail)}</div>` : ''}</div></div></td>
+      <td class="temp">${esc(r.temp)}°</td>
+      <td><span class="pill">${rainPill(r.rain)}</span></td>
+      <td>${esc(r.wind)}</td>
+    </tr>`);
   }
   document.getElementById('hourly').innerHTML = `
     <p class="hint">Next 24 hours</p>
-    <div class="hour-list">${hparts.join('')}</div>`;
+    <div class="hour-list mobile-cards">${cards.join('')}</div>
+    <div class="hour-list desktop-table"><table class="hour-table">
+      <thead><tr><th>Time</th><th>Conditions</th><th>Temp</th><th>Rain</th><th>Wind</th></tr></thead>
+      <tbody>${trows.join('')}</tbody>
+    </table></div>`;
 
   const drows = data.daily.map(d => {
     const left = Math.max(0, Math.min(100, (d.low - 55) / 50 * 100));
     const width = Math.max(4, Math.min(100 - left, (d.high - d.low) / 50 * 100));
     const rain = d.rain == null ? '—' : `${d.rain}% rain`;
+    // Prefer long weekday if we have a date
+    const name = d.date ? weekdayName(d.date) : d.name;
     return `<div class="day-row">
-      <div class="day-name">${esc(d.name)}</div>
+      <div class="day-name">${esc(name)}</div>
       <div class="wx"><div class="emoji">${d.emoji}</div>
         <div><div class="label">${esc(d.label)}</div></div></div>
       <div class="day-temps"><span class="lo">${d.low}°</span><div class="bar-track"><div class="bar-fill" style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></div></div><span class="hi">${d.high}°</span></div>
-      <div class="day-meta"><span>${esc(rain)}</span><span class="day-wind">${esc(d.wind)}</span></div>
+      <div class="day-rain">${esc(rain)}</div>
+      <div class="day-wind">${esc(d.wind)}</div>
+      <div class="day-meta"><span>${esc(rain)}</span><span>${esc(d.wind)}</span></div>
     </div>`;
   }).join('');
-  document.getElementById('tenday').innerHTML = `<p class="hint">${data.daily.length}-day outlook.</p>${drows}`;
+  document.getElementById('tenday').innerHTML = `<p class="hint">${data.daily.length}-day outlook</p>${drows}`;
 
   const c = data.creek;
   const t = c.thresholds || CREEK_THRESHOLDS;
@@ -459,10 +514,7 @@ async function loadDailyMet() {
     }
     if (!temps.length) continue;
     const [emoji, label] = fromSymbol(symbols[Math.floor(symbols.length / 2)]);
-    let name;
-    if (day === todayStr) name = 'Today';
-    else if (day === tomStr) name = 'Tomorrow';
-    else name = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+    const name = weekdayName(day);
     const avgDir = windDegs.length ? windDir(windDegs.reduce((a,b)=>a+b,0)/windDegs.length) : '';
     days.push({
       name, date: day, emoji, label,
@@ -508,8 +560,19 @@ async function loadDailyMapClick() {
       continue;
     }
     const [emoji, shortLabel] = fromText(label);
+    const cleaned = dayName.replace(/ Night$/,'');
+    const weekdays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    let nice = cleaned;
+    for (const w of weekdays) {
+      if (cleaned.toLowerCase().startsWith(w.toLowerCase()) || cleaned.toLowerCase().includes(w.toLowerCase())) {
+        nice = w; break;
+      }
+    }
+    if (/today|tonight|this afternoon|this morning/i.test(cleaned)) {
+      nice = weekdayName(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }));
+    }
     days.push({
-      name: dayName.replace(/ Night$/,''),
+      name: nice,
       emoji, label: shortLabel,
       high: high ?? (low != null ? low + 10 : 70),
       low: low ?? (high != null ? high - 10 : 55),
