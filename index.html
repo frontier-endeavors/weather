@@ -313,9 +313,9 @@ async function fetchJson(url, opts) {
 }
 
 async function loadHourlyNws() {
+  // No custom headers — avoids CORS preflight issues in the browser.
   const data = await fetchJson(
-    `https://api.weather.gov/gridpoints/TOP/50,55/forecast/hourly`,
-    { headers: { Accept: 'application/geo+json', 'User-Agent': 'ManhattanWeather/2.0 (personal)' } }
+    `https://api.weather.gov/gridpoints/TOP/50,55/forecast/hourly`
   );
   return data.properties.periods.slice(0, 24).map(p => {
     const t = new Date(p.startTime);
@@ -332,9 +332,9 @@ async function loadHourlyNws() {
 }
 
 async function loadDailyMet() {
+  // compact + no custom headers (met.no 403s / fails preflight on custom User-Agent)
   const data = await fetchJson(
-    `https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${LAT}&lon=${LON}`,
-    { headers: { 'User-Agent': 'ManhattanWeather/2.0 github.com/aaron personal-dashboard' } }
+    `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${LAT}&lon=${LON}`
   );
   const byDay = {};
   for (const p of data.properties.timeseries) {
@@ -384,6 +384,51 @@ async function loadDailyMet() {
   return days;
 }
 
+async function loadDailyMapClick() {
+  const data = await fetchJson(
+    `https://forecast.weather.gov/MapClick.php?lat=${LAT}&lon=${LON}&unit=0&lg=english&FcstType=json`
+  );
+  const names = data.time.startPeriodName || [];
+  const temps = data.data.temperature || [];
+  const pops = data.data.pop || [];
+  const weather = data.data.weather || [];
+  const labels = data.time.tempLabel || [];
+  const days = [];
+  let i = 0;
+  while (i < names.length && days.length < 10) {
+    const name = names[i];
+    const isDay = (labels[i] || '').toLowerCase() === 'high' || /morning|afternoon|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(name) && !/night/i.test(name);
+    let high = null, low = null, rain = null, label = weather[i] || '—', dayName = name;
+    if (labels[i] === 'High') {
+      high = parseInt(temps[i], 10);
+      rain = pops[i] !== '' && pops[i] != null ? parseInt(pops[i], 10) : null;
+      if (i + 1 < names.length && labels[i + 1] === 'Low') {
+        low = parseInt(temps[i + 1], 10);
+        i += 2;
+      } else {
+        i += 1;
+      }
+    } else if (labels[i] === 'Low') {
+      low = parseInt(temps[i], 10);
+      rain = pops[i] !== '' && pops[i] != null ? parseInt(pops[i], 10) : null;
+      i += 1;
+    } else {
+      i += 1;
+      continue;
+    }
+    const [emoji, shortLabel] = fromText(label);
+    days.push({
+      name: dayName.replace(/ Night$/,''),
+      emoji, label: shortLabel,
+      high: high ?? (low != null ? low + 10 : 70),
+      low: low ?? (high != null ? high - 10 : 55),
+      rain,
+      wind: '—'
+    });
+  }
+  return days.slice(0, 10);
+}
+
 async function loadCreekUsgs() {
   const usgs = await fetchJson(
     'https://waterservices.usgs.gov/nwis/iv/?sites=06879810,06879815&parameterCd=00065,00060&format=json'
@@ -422,7 +467,10 @@ async function refreshLive() {
   setBadge('stale', 'updating…');
   const results = await Promise.allSettled([
     loadHourlyNws(),
-    loadDailyMet(),
+    loadDailyMet().catch(async (err) => {
+      console.warn('met.no failed, trying NWS MapClick', err);
+      return loadDailyMapClick();
+    }),
     loadCreekUsgs()
   ]);
   const [h, d, c] = results;
