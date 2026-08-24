@@ -156,9 +156,11 @@
     vertical-align: middle;
   }
   table.hour-table tr:hover td { background: rgba(46, 196, 182, 0.06); }
+  table.hour-table th:last-child,
+  table.hour-table td.temp { text-align: right; }
   .day-row {
     display: grid;
-    grid-template-columns: 7.5rem minmax(0, 1.35fr) minmax(8rem, 1fr) 5rem 6.2rem;
+    grid-template-columns: 7.5rem minmax(0, 1.35fr) 5rem 6.2rem minmax(8rem, 1fr);
     gap: 0.45rem 0.65rem;
     align-items: center;
     padding: 0.55rem 0.15rem;
@@ -523,16 +525,16 @@ function render(data) {
       <td><div class="wx"><div class="emoji">${r.emoji}</div>
         <div><div class="label">${esc(c.label)}</div>
         ${c.detail ? `<div class="detail">${esc(c.detail)}</div>` : ''}</div></div></td>
-      <td class="temp">${esc(r.temp)}°</td>
       <td><span class="pill">${rainPill(r.rain)}</span></td>
       <td>${esc(r.wind)}</td>
+      <td class="temp">${esc(r.temp)}°</td>
     </tr>`);
   }
   document.getElementById('hourly').innerHTML = `
-    <p class="hint">Next 24 hours</p>
+    <p class="hint">Next 48 hours</p>
     <div class="hour-list mobile-cards">${cards.join('')}</div>
     <div class="hour-list desktop-table"><table class="hour-table">
-      <thead><tr><th>Time</th><th>Conditions</th><th>Temp</th><th>Rain</th><th>Wind</th></tr></thead>
+      <thead><tr><th>Time</th><th>Conditions</th><th>Rain</th><th>Wind</th><th>Temp</th></tr></thead>
       <tbody>${trows.join('')}</tbody>
     </table></div>`;
 
@@ -546,9 +548,9 @@ function render(data) {
       <div class="day-name">${esc(name)}</div>
       <div class="wx"><div class="emoji">${d.emoji}</div>
         <div><div class="label">${esc(d.label)}</div></div></div>
-      <div class="day-temps"><span class="lo">${d.low}°</span><div class="bar-track"><div class="bar-fill" style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></div></div><span class="hi">${d.high}°</span></div>
       <div class="day-rain">${esc(rain)}</div>
       <div class="day-wind">${esc(d.wind)}</div>
+      <div class="day-temps"><span class="lo">${d.low}°</span><div class="bar-track"><div class="bar-fill" style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></div></div><span class="hi">${d.high}°</span></div>
       <div class="day-meta"><span>${esc(rain)}</span><span>${esc(d.wind)}</span></div>
     </div>`;
   }).join('');
@@ -607,7 +609,7 @@ async function loadHourlyNws() {
   const data = await fetchJson(
     `https://api.weather.gov/gridpoints/TOP/50,55/forecast/hourly`
   );
-  return data.properties.periods.slice(0, 24).map(p => {
+  return data.properties.periods.slice(0, 48).map(p => {
     const t = new Date(p.startTime);
     const rain = (p.probabilityOfPrecipitation || {}).value;
     const [emoji, label] = fromText(p.shortForecast, rain);
