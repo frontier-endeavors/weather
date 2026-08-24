@@ -323,7 +323,7 @@
     <section id="hourly" class="panel active"></section>
     <section id="tenday" class="panel"></section>
     <section id="radar" class="panel">
-      <p class="hint">4 hours of observed NEXRAD, then NOAA HRRR forecast. Green is real; gold is projected.</p>
+      <p class="hint">4 hours of observed NEXRAD (5-min), then NOAA HRRR forecast. Green is real; gold is projected.</p>
       <div id="radarMap"></div>
       <div class="radar-controls">
         <button type="button" id="radarPlay">Pause</button>
@@ -885,10 +885,10 @@ async function startRadar() {
     }).addTo(radarMap).bindTooltip('Manhattan');
 
     const now = new Date();
-    // Observed: 4 hours of CONUS NEXRAD mosaic, every 10 minutes (mod 5 UTC).
-    const latestObs = floorUtc(new Date(now.getTime() - 5 * 60 * 1000), 10);
+    // Observed: 4 hours of CONUS NEXRAD mosaic, every 5 minutes (IEM native step).
+    const latestObs = floorUtc(new Date(now.getTime() - 2 * 60 * 1000), 5);
     const obs = [];
-    for (let min = 4 * 60; min >= 0; min -= 10) {
+    for (let min = 4 * 60; min >= 0; min -= 5) {
       const t = new Date(latestObs.getTime() - min * 60 * 1000);
       obs.push({
         time: t,
@@ -927,14 +927,20 @@ async function startRadar() {
     rail.style.setProperty('--now-pct', `${nowPct}%`);
     scrub.max = String(radarFrames.length - 1);
 
-    radarLayer = L.tileLayer(radarFrames[lastObsIdx].url, {
-      opacity: 0.72, zIndex: 10, maxNativeZoom: 8, maxZoom: 10, tileSize: 256
-    }).addTo(radarMap);
+    // Preload every frame as its own layer so playback is an opacity swap, not a tile fetch.
+    const layers = radarFrames.map((f) =>
+      L.tileLayer(f.url, {
+        opacity: 0, zIndex: 10, maxNativeZoom: 8, maxZoom: 10, tileSize: 256
+      }).addTo(radarMap)
+    );
+    radarLayer = layers;
 
     function show(i) {
+      const prev = radarIdx;
       radarIdx = i;
+      if (layers[prev]) layers[prev].setOpacity(0);
+      layers[i].setOpacity(0.72);
       const f = radarFrames[i];
-      radarLayer.setUrl(f.url);
       const isFcst = f.kind === 'fcst';
       kindEl.textContent = isFcst ? 'forecast · HRRR' : 'observed · NEXRAD';
       kindEl.className = 'radar-badge ' + (isFcst ? 'fcst' : 'obs');
@@ -945,18 +951,19 @@ async function startRadar() {
       scrub.style.accentColor = isFcst ? '#c9843a' : '#2ec4b6';
     }
 
+    const FRAME_MS = 110;
+    const SEAM_MS = 320;
     function tick() {
       const next = (radarIdx + 1) % radarFrames.length;
       show(next);
-      // Linger on the observed/forecast seam so the jump is obvious.
-      const delay = (radarIdx === lastObsIdx || next === 0) ? 1100 : 420;
+      const delay = (radarIdx === lastObsIdx || next === 0) ? SEAM_MS : FRAME_MS;
       radarTimer = setTimeout(tick, delay);
     }
     function play() {
       if (radarTimer) clearTimeout(radarTimer);
       radarPlaying = true;
       playBtn.textContent = 'Pause';
-      radarTimer = setTimeout(tick, 420);
+      radarTimer = setTimeout(tick, FRAME_MS);
     }
     function pause() {
       radarPlaying = false;
@@ -964,7 +971,7 @@ async function startRadar() {
       if (radarTimer) { clearTimeout(radarTimer); radarTimer = null; }
     }
 
-    show(lastObsIdx);
+    show(0);
     play();
     playBtn.addEventListener('click', () => radarPlaying ? pause() : play());
     scrub.addEventListener('input', () => {
