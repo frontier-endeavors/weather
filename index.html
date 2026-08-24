@@ -352,11 +352,25 @@ function windDir(deg) {
   const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
   return dirs[Math.round(deg / 22.5) % 16];
 }
-function fromText(s) {
+function fromText(s, pop) {
   const t = (s || '').toLowerCase();
-  if (t.includes('thunder') || t.includes('t-storm') || t.includes('storm')) return ['⛈️','Storms'];
+  const chance = pop == null ? null : Number(pop);
+  const isStorm = t.includes('thunder') || t.includes('t-storm') || (t.includes('storm') && !t.includes('dust'));
+  if (isStorm) {
+    const slight = t.includes('slight') || t.includes('small chance') || t.includes('isolated') || t.includes('scattered');
+    const likely = t.includes('likely') || t.includes('numerous') || t.includes('definite') || t.includes('severe');
+    if (likely || (chance != null && chance >= 55)) return ['⛈️', 'Storms likely'];
+    if (t.includes('isolated')) return ['🌦️', 'Isolated storms'];
+    if (slight || (chance != null && chance < 35)) return ['🌦️', 'Slight chance storms'];
+    return ['🌦️', 'Chance storms'];
+  }
   if (t.includes('snow')) return ['🌨️','Snow'];
-  if (t.includes('shower') || t.includes('rain') || t.includes('drizzle')) return ['🌧️','Rain'];
+  if (t.includes('shower') || t.includes('rain') || t.includes('drizzle')) {
+    if (t.includes('slight') || t.includes('isolated') || (chance != null && chance < 35)) return ['🌦️','Slight chance rain'];
+    if (t.includes('likely') || (chance != null && chance >= 55)) return ['🌧️','Rain likely'];
+    if (t.includes('chance')) return ['🌦️','Chance rain'];
+    return ['🌧️','Rain'];
+  }
   if (t.includes('fog') || t.includes('haze')) return ['🌫️','Fog'];
   if (t.includes('mostly sunny') || t.includes('mostly clear')) return ['🌤️','Mostly sunny'];
   if (t.includes('partly')) return ['⛅','Partly cloudy'];
@@ -595,13 +609,14 @@ async function loadHourlyNws() {
   );
   return data.properties.periods.slice(0, 24).map(p => {
     const t = new Date(p.startTime);
-    const [emoji, label] = fromText(p.shortForecast);
+    const rain = (p.probabilityOfPrecipitation || {}).value;
+    const [emoji, label] = fromText(p.shortForecast, rain);
     return {
       t: t.toLocaleString('en-US', { timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric' }).replace(',', ''),
       temp: p.temperature,
       emoji, label,
       detail: p.shortForecast,
-      rain: (p.probabilityOfPrecipitation || {}).value,
+      rain,
       wind: `${p.windSpeed} ${p.windDirection}`
     };
   });
@@ -689,7 +704,7 @@ async function loadDailyMapClick() {
       i += 1;
       continue;
     }
-    const [emoji, shortLabel] = fromText(label);
+    const [emoji, shortLabel] = fromText(label, rain);
     const cleaned = dayName.replace(/ Night$/,'');
     const weekdays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     let nice = cleaned;
