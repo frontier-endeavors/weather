@@ -186,10 +186,41 @@
     border: 1px solid var(--line); background: #0a2028;
   }
   .radar-controls {
-    display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;
     margin-top: 0.65rem; color: var(--muted); font-size: 0.9rem;
   }
-  .radar-controls .ts { color: var(--green); font-variant-numeric: tabular-nums; }
+  .radar-controls .ts { font-variant-numeric: tabular-nums; }
+  .radar-controls .ts.obs { color: var(--green); }
+  .radar-controls .ts.fcst { color: #ffb070; }
+  .radar-badge {
+    font-size: 0.72rem; font-weight: 750; letter-spacing: 0.04em;
+    text-transform: uppercase; padding: 0.18rem 0.5rem; border-radius: 999px;
+  }
+  .radar-badge.obs { background: rgba(61,255,168,0.15); color: var(--green); }
+  .radar-badge.fcst { background: rgba(255,176,80,0.18); color: #ffb070; }
+  #radarPlay {
+    appearance: none; border: 1px solid var(--line); background: var(--bg2);
+    color: var(--text); border-radius: 999px; padding: 0.28rem 0.7rem;
+    font: inherit; font-size: 0.82rem; cursor: pointer;
+  }
+  .radar-timeline { margin-top: 0.55rem; }
+  .radar-rail {
+    position: relative; height: 8px; border-radius: 999px; overflow: hidden;
+    background: linear-gradient(90deg, #2ec4b6 0 var(--now-pct, 50%), #c9843a var(--now-pct, 50%) 100%);
+    opacity: 0.85;
+  }
+  .radar-now-mark {
+    position: absolute; top: -3px; bottom: -3px; width: 2px;
+    left: var(--now-pct, 50%); transform: translateX(-1px);
+    background: #fff; box-shadow: 0 0 6px rgba(255,255,255,0.7);
+  }
+  #radarScrub { width: 100%; margin: 0.35rem 0 0.15rem; accent-color: #2ec4b6; }
+  .radar-legend {
+    display: flex; justify-content: space-between;
+    font-size: 0.75rem; color: var(--muted);
+  }
+  .radar-legend .fcst { color: #ffb070; }
+  .radar-legend .obs { color: var(--green); }
   .creek-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0.75rem; }
   .card {
     background: rgba(7, 28, 34, 0.8); border: 1px solid var(--line);
@@ -292,16 +323,23 @@
     <section id="hourly" class="panel active"></section>
     <section id="tenday" class="panel"></section>
     <section id="radar" class="panel">
-      <p class="hint">Animated rain radar (past + short nowcast). Plays automatically.</p>
+      <p class="hint">4 hours of observed NEXRAD, then NOAA HRRR forecast. Green is real; gold is projected.</p>
       <div id="radarMap"></div>
       <div class="radar-controls">
-        <span>Frame: <strong class="ts" id="radarTime">loading…</strong></span>
+        <button type="button" id="radarPlay">Pause</button>
+        <span class="radar-badge obs" id="radarKind">observed</span>
+        <strong class="ts obs" id="radarTime">loading…</strong>
         <span id="radarStatus">starting</span>
+      </div>
+      <div class="radar-timeline">
+        <div class="radar-rail" id="radarRail"><div class="radar-now-mark" title="Now"></div></div>
+        <input type="range" id="radarScrub" min="0" max="1" value="0" step="1">
+        <div class="radar-legend"><span class="obs">observed</span><span>now</span><span class="fcst">forecast</span></div>
       </div>
     </section>
     <section id="creek" class="panel"></section>
 
-    <footer>NWS hourly · MET Norway 10-day · USGS creek · RainViewer radar</footer>
+    <footer>NWS hourly · MET Norway 10-day · USGS creek · IEM NEXRAD / HRRR</footer>
   </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -808,49 +846,132 @@ document.querySelectorAll('nav.tabs button').forEach(btn => {
   });
 });
 
-let radarMap, radarLayers = [], radarTimer = null, radarIdx = 0, radarFrames = [];
+let radarMap, radarLayer = null, radarTimer = null, radarIdx = 0, radarFrames = [], radarPlaying = true, lastObsIdx = 0;
+
+function iemTile(layerName) {
+  return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${layerName}/{z}/{x}/{y}.png`;
+}
+function utcStamp(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}${p(d.getUTCMonth()+1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}`;
+}
+function floorUtc(d, stepMin) {
+  const ms = stepMin * 60 * 1000;
+  return new Date(Math.floor(d.getTime() / ms) * ms);
+}
+function fmtRadarTime(d) {
+  return d.toLocaleString('en-US', {
+    timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric', minute: '2-digit'
+  });
+}
+
 async function startRadar() {
   const status = document.getElementById('radarStatus');
+  const kindEl = document.getElementById('radarKind');
+  const timeEl = document.getElementById('radarTime');
+  const scrub = document.getElementById('radarScrub');
+  const playBtn = document.getElementById('radarPlay');
+  const rail = document.getElementById('radarRail');
   try {
     radarMap = L.map('radarMap', {
       zoomControl: true, attributionControl: true, minZoom: 4, maxZoom: 10
     }).setView([LAT, LON], 7);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 10
+      attribution: '&copy; OpenStreetMap &copy; CARTO · radar IEM / NOAA',
+      maxZoom: 10
     }).addTo(radarMap);
     L.circleMarker([LAT, LON], {
       radius: 6, color: '#3dffa8', fillColor: '#3dffa8', fillOpacity: 0.9, weight: 2
     }).addTo(radarMap).bindTooltip('Manhattan');
 
-    const data = await fetchJson('https://api.rainviewer.com/public/weather-maps.json');
-    const host = data.host;
-    const past = data.radar.past || [];
-    const nowcast = data.radar.nowcast || [];
-    radarFrames = past.concat(nowcast);
+    const now = new Date();
+    // Observed: 4 hours of CONUS NEXRAD mosaic, every 10 minutes (mod 5 UTC).
+    const latestObs = floorUtc(new Date(now.getTime() - 5 * 60 * 1000), 10);
+    const obs = [];
+    for (let min = 4 * 60; min >= 0; min -= 10) {
+      const t = new Date(latestObs.getTime() - min * 60 * 1000);
+      obs.push({
+        time: t,
+        kind: 'obs',
+        url: iemTile(`ridge::USCOMP-N0Q-${utcStamp(t)}`)
+      });
+    }
+
+    // Forecast: HRRR simulated reflectivity, 15-min steps, ~6 hours ahead of now.
+    let initUtc = null;
+    try {
+      const meta = await fetchJson('https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_1080.json');
+      initUtc = new Date(meta.model_init_utc);
+    } catch (_) {}
+    const fcst = [];
+    if (initUtc && !Number.isNaN(initUtc.getTime())) {
+      const initStamp = utcStamp(initUtc);
+      const horizon = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+      for (let m = 0; m <= 18 * 60; m += 15) {
+        const valid = new Date(initUtc.getTime() + m * 60 * 1000);
+        if (valid <= latestObs) continue;
+        if (valid > horizon) break;
+        fcst.push({
+          time: valid,
+          kind: 'fcst',
+          url: iemTile(`hrrr::REFD-F${String(m).padStart(4, '0')}-${initStamp}`)
+        });
+      }
+    }
+
+    radarFrames = obs.concat(fcst);
+    lastObsIdx = obs.length - 1;
     if (!radarFrames.length) { status.textContent = 'no radar frames'; return; }
 
-    radarFrames.forEach((f) => {
-      const layer = L.tileLayer(host + f.path + '/256/{z}/{x}/{y}/2/1_1.png', {
-        opacity: 0, zIndex: 10, maxNativeZoom: 7, maxZoom: 10, tileSize: 256
-      });
-      layer.addTo(radarMap);
-      radarLayers.push(layer);
-    });
+    const nowPct = lastObsIdx / Math.max(1, radarFrames.length - 1) * 100;
+    rail.style.setProperty('--now-pct', `${nowPct}%`);
+    scrub.max = String(radarFrames.length - 1);
+
+    radarLayer = L.tileLayer(radarFrames[lastObsIdx].url, {
+      opacity: 0.72, zIndex: 10, maxNativeZoom: 8, maxZoom: 10, tileSize: 256
+    }).addTo(radarMap);
 
     function show(i) {
-      radarLayers.forEach((layer, j) => layer.setOpacity(j === i ? 0.75 : 0));
-      const ts = new Date(radarFrames[i].time * 1000);
-      document.getElementById('radarTime').textContent = ts.toLocaleString('en-US', {
-        timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric', minute: '2-digit'
-      });
-      status.textContent = i >= past.length ? 'nowcast' : 'observed';
+      radarIdx = i;
+      const f = radarFrames[i];
+      radarLayer.setUrl(f.url);
+      const isFcst = f.kind === 'fcst';
+      kindEl.textContent = isFcst ? 'forecast · HRRR' : 'observed · NEXRAD';
+      kindEl.className = 'radar-badge ' + (isFcst ? 'fcst' : 'obs');
+      timeEl.textContent = fmtRadarTime(f.time);
+      timeEl.className = 'ts ' + (isFcst ? 'fcst' : 'obs');
+      status.textContent = isFcst ? 'projected' : (i === lastObsIdx ? 'now' : 'observed');
+      scrub.value = String(i);
+      scrub.style.accentColor = isFcst ? '#c9843a' : '#2ec4b6';
     }
-    radarIdx = Math.max(0, past.length - 1);
-    show(radarIdx);
-    radarTimer = setInterval(() => {
-      radarIdx = (radarIdx + 1) % radarFrames.length;
-      show(radarIdx);
-    }, 450);
+
+    function tick() {
+      const next = (radarIdx + 1) % radarFrames.length;
+      show(next);
+      // Linger on the observed/forecast seam so the jump is obvious.
+      const delay = (radarIdx === lastObsIdx || next === 0) ? 1100 : 420;
+      radarTimer = setTimeout(tick, delay);
+    }
+    function play() {
+      if (radarTimer) clearTimeout(radarTimer);
+      radarPlaying = true;
+      playBtn.textContent = 'Pause';
+      radarTimer = setTimeout(tick, 420);
+    }
+    function pause() {
+      radarPlaying = false;
+      playBtn.textContent = 'Play';
+      if (radarTimer) { clearTimeout(radarTimer); radarTimer = null; }
+    }
+
+    show(lastObsIdx);
+    play();
+    playBtn.addEventListener('click', () => radarPlaying ? pause() : play());
+    scrub.addEventListener('input', () => {
+      pause();
+      show(Number(scrub.value));
+    });
+    status.textContent = 'now';
   } catch (e) {
     status.textContent = 'radar failed to load';
     console.error(e);
