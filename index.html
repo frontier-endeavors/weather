@@ -842,11 +842,16 @@ document.querySelectorAll('nav.tabs button').forEach(btn => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'radar') setTimeout(() => radarMap && radarMap.invalidateSize(), 50);
+    if (btn.dataset.tab === 'radar') {
+      setTimeout(() => {
+        if (!radarReady) { radarReady = true; startRadar(); }
+        else if (radarMap) radarMap.invalidateSize();
+      }, 50);
+    }
   });
 });
 
-let radarMap, radarLayer = null, radarTimer = null, radarIdx = 0, radarFrames = [], radarPlaying = true, lastObsIdx = 0;
+let radarMap, radarLayer = null, radarTimer = null, radarIdx = 0, radarFrames = [], radarPlaying = true, lastObsIdx = 0, radarReady = false;
 
 function iemTile(layerName) {
   return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${layerName}/{z}/{x}/{y}.png`;
@@ -874,7 +879,8 @@ async function startRadar() {
   const rail = document.getElementById('radarRail');
   try {
     radarMap = L.map('radarMap', {
-      zoomControl: true, attributionControl: true, minZoom: 4, maxZoom: 10
+      zoomControl: true, attributionControl: true, minZoom: 4, maxZoom: 10,
+      fadeAnimation: false, zoomAnimation: false, markerZoomAnimation: false
     }).setView([LAT, LON], 7);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap &copy; CARTO · radar IEM / NOAA',
@@ -927,19 +933,56 @@ async function startRadar() {
     rail.style.setProperty('--now-pct', `${nowPct}%`);
     scrub.max = String(radarFrames.length - 1);
 
-    // Preload every frame as its own layer so playback is an opacity swap, not a tile fetch.
-    const layers = radarFrames.map((f) =>
-      L.tileLayer(f.url, {
-        opacity: 0, zIndex: 10, maxNativeZoom: 8, maxZoom: 10, tileSize: 256
-      }).addTo(radarMap)
-    );
-    radarLayer = layers;
+    // Two layers only: iPhone Safari dies if we add ~70 tile layers at once.
+    const layerOpts = {
+      opacity: 0, zIndex: 10, maxNativeZoom: 8, maxZoom: 10, tileSize: 256,
+      keepBuffer: 0, updateWhenIdle: false, updateWhenZooming: false
+    };
+    const buf = [
+      L.tileLayer(radarFrames[0].url, layerOpts).addTo(radarMap),
+      L.tileLayer(radarFrames[0].url, layerOpts).addTo(radarMap)
+    ];
+    let front = 0;
+    radarLayer = buf;
+    const inflight = new Set();
+    const isPhone = window.innerWidth < 780;
+    const ahead = isPhone ? 4 : 8;
+    const pad = isPhone ? 0 : 1;
+
+    function visibleTiles() {
+      const z = Math.round(radarMap.getZoom());
+      const b = radarMap.getPixelBounds();
+      const ts = 256;
+      const out = [];
+      const x0 = Math.floor(b.min.x / ts) - pad;
+      const x1 = Math.floor(b.max.x / ts) + pad;
+      const y0 = Math.floor(b.min.y / ts) - pad;
+      const y1 = Math.floor(b.max.y / ts) + pad;
+      for (let x = x0; x <= x1; x++) {
+        for (let y = y0; y <= y1; y++) out.push({ x, y, z });
+      }
+      return out;
+    }
+    function prefetchIndex(i) {
+      const f = radarFrames[i];
+      if (!f) return;
+      for (const { x, y, z } of visibleTiles()) {
+        const url = f.url.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+        if (inflight.has(url)) continue;
+        inflight.add(url);
+        const img = new Image();
+        img.onload = img.onerror = () => inflight.delete(url);
+        img.src = url;
+      }
+    }
 
     function show(i) {
-      const prev = radarIdx;
       radarIdx = i;
-      if (layers[prev]) layers[prev].setOpacity(0);
-      layers[i].setOpacity(0.72);
+      const back = buf[1 - front];
+      back.setUrl(radarFrames[i].url);
+      back.setOpacity(0.72);
+      buf[front].setOpacity(0);
+      front = 1 - front;
       const f = radarFrames[i];
       const isFcst = f.kind === 'fcst';
       kindEl.textContent = isFcst ? 'forecast · HRRR' : 'observed · NEXRAD';
@@ -949,6 +992,8 @@ async function startRadar() {
       status.textContent = isFcst ? 'projected' : (i === lastObsIdx ? 'now' : 'observed');
       scrub.value = String(i);
       scrub.style.accentColor = isFcst ? '#c9843a' : '#2ec4b6';
+      const n = radarFrames.length;
+      for (let k = 1; k <= ahead; k++) prefetchIndex((i + k) % n);
     }
 
     const FRAME_MS = 110;
@@ -984,7 +1029,6 @@ async function startRadar() {
     console.error(e);
   }
 }
-startRadar();
 </script>
 </body>
 </html>
