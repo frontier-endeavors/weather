@@ -185,6 +185,10 @@
     height: min(62vh, 560px); border-radius: 12px;
     border: 1px solid var(--line); background: #0a2028;
   }
+  #radarMap canvas.radar-canvas {
+    pointer-events: none;
+    image-rendering: auto;
+  }
   .radar-controls {
     display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;
     margin-top: 0.65rem; color: var(--muted); font-size: 0.9rem;
@@ -842,16 +846,20 @@ document.querySelectorAll('nav.tabs button').forEach(btn => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'radar') {
+    radarVisible = btn.dataset.tab === 'radar';
+    if (radarVisible) {
       setTimeout(() => {
         if (!radarReady) { radarReady = true; startRadar(); }
-        else if (radarMap) radarMap.invalidateSize();
+        else if (radarMap) {
+          radarMap.invalidateSize();
+          if (radarRedraw) radarRedraw();
+        }
       }, 50);
     }
   });
 });
 
-let radarMap, radarLayer = null, radarTimer = null, radarIdx = 0, radarFrames = [], radarPlaying = true, lastObsIdx = 0, radarReady = false;
+let radarMap, radarTimer = null, radarIdx = 0, radarFrames = [], radarPlaying = true, lastObsIdx = 0, radarReady = false, radarRedraw = null, radarVisible = false;
 
 function iemTile(layerName) {
   return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${layerName}/{z}/{x}/{y}.png`;
@@ -877,10 +885,17 @@ async function startRadar() {
   const scrub = document.getElementById('radarScrub');
   const playBtn = document.getElementById('radarPlay');
   const rail = document.getElementById('radarRail');
+  radarVisible = true;
   try {
+    const host = document.getElementById('radarMap');
+    if (host.clientWidth < 40) {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+
     radarMap = L.map('radarMap', {
       zoomControl: true, attributionControl: true, minZoom: 4, maxZoom: 10,
-      fadeAnimation: false, zoomAnimation: false, markerZoomAnimation: false
+      fadeAnimation: false, zoomAnimation: false, markerZoomAnimation: false,
+      bounceAtZoomLimits: false
     }).setView([LAT, LON], 7);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap &copy; CARTO · radar IEM / NOAA',
@@ -891,7 +906,6 @@ async function startRadar() {
     }).addTo(radarMap).bindTooltip('Manhattan');
 
     const now = new Date();
-    // Observed: 4 hours of CONUS NEXRAD mosaic, every 5 minutes (IEM native step).
     const latestObs = floorUtc(new Date(now.getTime() - 2 * 60 * 1000), 5);
     const obs = [];
     for (let min = 4 * 60; min >= 0; min -= 5) {
@@ -903,7 +917,6 @@ async function startRadar() {
       });
     }
 
-    // Forecast: HRRR simulated reflectivity, 15-min steps, ~6 hours ahead of now.
     let initUtc = null;
     try {
       const meta = await fetchJson('https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_1080.json');
@@ -933,97 +946,228 @@ async function startRadar() {
     rail.style.setProperty('--now-pct', `${nowPct}%`);
     scrub.max = String(radarFrames.length - 1);
 
-    // Two layers only: iPhone Safari dies if we add ~70 tile layers at once.
-    const layerOpts = {
-      opacity: 0, zIndex: 10, maxNativeZoom: 8, maxZoom: 10, tileSize: 256,
-      keepBuffer: 0, updateWhenIdle: false, updateWhenZooming: false
-    };
-    const buf = [
-      L.tileLayer(radarFrames[0].url, layerOpts).addTo(radarMap),
-      L.tileLayer(radarFrames[0].url, layerOpts).addTo(radarMap)
-    ];
-    let front = 0;
-    radarLayer = buf;
-    const inflight = new Set();
-    const isPhone = window.innerWidth < 780;
-    const ahead = isPhone ? 4 : 8;
-    const pad = isPhone ? 0 : 1;
+    const isPhone = window.innerWidth < 780 || /iPhone|iPad|Android/i.test(navigator.userAgent);
+    const MAX_INFLIGHT = isPhone ? 6 : 10;
+    const MAX_TILES = isPhone ? 90 : 260;
+    const AHEAD = isPhone ? 8 : 14;
+    const FRAME_MS = 83;
+    const SEAM_MS = 260;
+    const LOAD_WAIT = 160;
 
-    function visibleTiles() {
-      const z = Math.round(radarMap.getZoom());
-      const b = radarMap.getPixelBounds();
-      const ts = 256;
-      const out = [];
-      const x0 = Math.floor(b.min.x / ts) - pad;
-      const x1 = Math.floor(b.max.x / ts) + pad;
-      const y0 = Math.floor(b.min.y / ts) - pad;
-      const y1 = Math.floor(b.max.y / ts) + pad;
-      for (let x = x0; x <= x1; x++) {
-        for (let y = y0; y <= y1; y++) out.push({ x, y, z });
-      }
-      return out;
+    const canvas = L.DomUtil.create('canvas', 'radar-canvas');
+    radarMap.getPanes().overlayPane.appendChild(canvas);
+    let ctx = canvas.getContext('2d', { alpha: true });
+    try { ctx = canvas.getContext('2d', { alpha: true, desynchronized: true }) || ctx; } catch (_) {}
+
+    const cache = new Map();
+    const queue = [];
+    let inflight = 0;
+
+    function tileZoom() {
+      const z = radarMap.getZoom();
+      return Math.min(8, Math.max(4, Math.round(z)));
     }
-    function prefetchIndex(i) {
-      const f = radarFrames[i];
-      if (!f) return;
-      for (const { x, y, z } of visibleTiles()) {
-        const url = f.url.replace('{z}', z).replace('{x}', x).replace('{y}', y);
-        if (inflight.has(url)) continue;
-        inflight.add(url);
+    function tileUrls(frame) {
+      if (!frame || !radarMap) return [];
+      const zoom = radarMap.getZoom();
+      const z = tileZoom();
+      const scale = Math.pow(2, zoom - z);
+      const ts = 256 * scale;
+      const pb = radarMap.getPixelBounds();
+      const pad = isPhone ? 0 : 1;
+      const x0 = Math.floor(pb.min.x / ts) - pad;
+      const x1 = Math.floor(pb.max.x / ts) + pad;
+      const y0 = Math.floor(pb.min.y / ts) - pad;
+      const y1 = Math.floor(pb.max.y / ts) + pad;
+      const urls = [];
+      for (let x = x0; x <= x1; x++) {
+        for (let y = y0; y <= y1; y++) {
+          urls.push(frame.url.replace('{z}', z).replace('{x}', x).replace('{y}', y));
+        }
+      }
+      return urls;
+    }
+    function pump() {
+      while (inflight < MAX_INFLIGHT && queue.length) {
+        const url = queue.shift();
+        const ent = cache.get(url);
+        if (!ent || ent.img) continue;
+        inflight++;
         const img = new Image();
-        img.onload = img.onerror = () => inflight.delete(url);
+        img.crossOrigin = 'anonymous';
+        ent.img = img;
+        img.onload = () => { ent.ready = img.naturalWidth > 0; inflight--; pump(); };
+        img.onerror = () => { ent.failed = true; inflight--; pump(); };
         img.src = url;
       }
     }
-
-    function show(i) {
-      radarIdx = i;
-      const back = buf[1 - front];
-      back.setUrl(radarFrames[i].url);
-      back.setOpacity(0.72);
-      buf[front].setOpacity(0);
-      front = 1 - front;
+    function requestUrl(url) {
+      if (cache.has(url)) return cache.get(url);
+      const ent = { img: null, ready: false, failed: false };
+      cache.set(url, ent);
+      queue.push(url);
+      pump();
+      return ent;
+    }
+    function requestFrame(i) {
       const f = radarFrames[i];
+      if (!f) return;
+      tileUrls(f).forEach(requestUrl);
+    }
+    function frameReady(i) {
+      const urls = tileUrls(radarFrames[i]);
+      if (!urls.length) return false;
+      let done = 0;
+      for (const url of urls) {
+        const ent = cache.get(url);
+        if (ent && (ent.ready || ent.failed)) done++;
+      }
+      return done >= urls.length;
+    }
+    function evict() {
+      if (cache.size <= MAX_TILES) return;
+      const keep = new Set();
+      const n = radarFrames.length;
+      for (let k = -1; k <= AHEAD; k++) {
+        const i = (radarIdx + k + n) % n;
+        tileUrls(radarFrames[i]).forEach((u) => keep.add(u));
+      }
+      for (const url of [...cache.keys()]) {
+        if (cache.size <= MAX_TILES) break;
+        if (!keep.has(url)) cache.delete(url);
+      }
+    }
+    function placeCanvas() {
+      const size = radarMap.getSize();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.max(1, Math.round(size.x * dpr));
+      const h = Math.max(1, Math.round(size.y * dpr));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.width = size.x + 'px';
+        canvas.style.height = size.y + 'px';
+      }
+      L.DomUtil.setPosition(canvas, radarMap.containerPointToLayerPoint([0, 0]));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    function draw() {
+      if (!radarMap || !ctx) return;
+      placeCanvas();
+      const size = radarMap.getSize();
+      ctx.clearRect(0, 0, size.x, size.y);
+      const frame = radarFrames[radarIdx];
+      if (!frame) return;
+      const zoom = radarMap.getZoom();
+      const z = tileZoom();
+      const scale = Math.pow(2, zoom - z);
+      const ts = 256 * scale;
+      const pb = radarMap.getPixelBounds();
+      const x0 = Math.floor(pb.min.x / ts);
+      const x1 = Math.floor(pb.max.x / ts);
+      const y0 = Math.floor(pb.min.y / ts);
+      const y1 = Math.floor(pb.max.y / ts);
+      ctx.globalAlpha = 0.72;
+      for (let x = x0; x <= x1; x++) {
+        for (let y = y0; y <= y1; y++) {
+          const url = frame.url.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+          const ent = cache.get(url);
+          if (!ent || !ent.ready || !ent.img) continue;
+          ctx.drawImage(ent.img, x * ts - pb.min.x, y * ts - pb.min.y, ts, ts);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+    function labels() {
+      const f = radarFrames[radarIdx];
+      if (!f) return;
       const isFcst = f.kind === 'fcst';
       kindEl.textContent = isFcst ? 'forecast · HRRR' : 'observed · NEXRAD';
       kindEl.className = 'radar-badge ' + (isFcst ? 'fcst' : 'obs');
       timeEl.textContent = fmtRadarTime(f.time);
       timeEl.className = 'ts ' + (isFcst ? 'fcst' : 'obs');
-      status.textContent = isFcst ? 'projected' : (i === lastObsIdx ? 'now' : 'observed');
-      scrub.value = String(i);
+      status.textContent = isFcst ? 'projected' : (radarIdx === lastObsIdx ? 'now' : 'observed');
+      scrub.value = String(radarIdx);
       scrub.style.accentColor = isFcst ? '#c9843a' : '#2ec4b6';
-      const n = radarFrames.length;
-      for (let k = 1; k <= ahead; k++) prefetchIndex((i + k) % n);
+    }
+    function goTo(i) {
+      radarIdx = (i + radarFrames.length) % radarFrames.length;
+      requestFrame(radarIdx);
+      for (let k = 1; k <= AHEAD; k++) requestFrame((radarIdx + k) % radarFrames.length);
+      evict();
+      labels();
+      draw();
     }
 
-    const FRAME_MS = 110;
-    const SEAM_MS = 320;
-    function tick() {
+    radarRedraw = () => { draw(); requestFrame(radarIdx); };
+
+    radarMap.on('move zoom viewreset resize', () => {
+      if (!radarVisible) return;
+      draw();
+      requestFrame(radarIdx);
+    });
+
+    let lastTs = 0, waitingSince = 0;
+    function loop(ts) {
+      radarTimer = requestAnimationFrame(loop);
+      if (!radarPlaying || !radarVisible || document.hidden) {
+        lastTs = 0;
+        return;
+      }
+      if (!lastTs) { lastTs = ts; return; }
+      const delay = (radarIdx === lastObsIdx) ? SEAM_MS : FRAME_MS;
+      if (ts - lastTs < delay) return;
       const next = (radarIdx + 1) % radarFrames.length;
-      show(next);
-      const delay = (radarIdx === lastObsIdx || next === 0) ? SEAM_MS : FRAME_MS;
-      radarTimer = setTimeout(tick, delay);
+      requestFrame(next);
+      if (!frameReady(next)) {
+        if (!waitingSince) waitingSince = ts;
+        if (ts - waitingSince < LOAD_WAIT) return;
+      }
+      waitingSince = 0;
+      lastTs = ts;
+      goTo(next);
     }
     function play() {
-      if (radarTimer) clearTimeout(radarTimer);
       radarPlaying = true;
       playBtn.textContent = 'Pause';
-      radarTimer = setTimeout(tick, FRAME_MS);
+      lastTs = 0;
+      waitingSince = 0;
+      if (!radarTimer) radarTimer = requestAnimationFrame(loop);
     }
     function pause() {
       radarPlaying = false;
       playBtn.textContent = 'Play';
-      if (radarTimer) { clearTimeout(radarTimer); radarTimer = null; }
+      lastTs = 0;
     }
 
-    show(0);
-    play();
     playBtn.addEventListener('click', () => radarPlaying ? pause() : play());
     scrub.addEventListener('input', () => {
       pause();
-      show(Number(scrub.value));
+      goTo(Number(scrub.value));
     });
-    status.textContent = 'now';
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && radarPlaying && radarVisible) lastTs = 0;
+    });
+
+    status.textContent = 'buffering';
+    goTo(0);
+    const bufferN = Math.min(AHEAD, radarFrames.length);
+    for (let k = 0; k < bufferN; k++) requestFrame(k);
+
+    const t0 = performance.now();
+    (function waitBuffer() {
+      const need = Math.min(isPhone ? 4 : 6, radarFrames.length);
+      let ready = 0;
+      for (let k = 0; k < need; k++) if (frameReady(k)) ready++;
+      if (ready >= need || performance.now() - t0 > 1500) {
+        labels();
+        draw();
+        play();
+        return;
+      }
+      status.textContent = 'buffering';
+      requestAnimationFrame(waitBuffer);
+    })();
   } catch (e) {
     status.textContent = 'radar failed to load';
     console.error(e);
