@@ -896,10 +896,15 @@ async function startRadar() {
       zoomControl: true, attributionControl: true, minZoom: 4, maxZoom: 10,
       fadeAnimation: false, zoomAnimation: false, markerZoomAnimation: false,
       bounceAtZoomLimits: false
-    }).setView([LAT, LON], 7);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO · radar IEM / NOAA',
+    }).setView([LAT, LON], 8);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri · radar IEM / NOAA',
       maxZoom: 10
+    }).addTo(radarMap);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '',
+      maxZoom: 10,
+      opacity: 0.85
     }).addTo(radarMap);
     L.circleMarker([LAT, LON], {
       radius: 6, color: '#3dffa8', fillColor: '#3dffa8', fillOpacity: 0.9, weight: 2
@@ -947,12 +952,9 @@ async function startRadar() {
     scrub.max = String(radarFrames.length - 1);
 
     const isPhone = window.innerWidth < 780 || /iPhone|iPad|Android/i.test(navigator.userAgent);
-    const MAX_INFLIGHT = isPhone ? 6 : 10;
-    const MAX_TILES = isPhone ? 90 : 260;
-    const AHEAD = isPhone ? 8 : 14;
-    const FRAME_MS = 83;
-    const SEAM_MS = 260;
-    const LOAD_WAIT = 160;
+    const MAX_INFLIGHT = isPhone ? 8 : 12;
+    const FRAME_MS = 90;
+    const SEAM_MS = 380;
 
     const canvas = L.DomUtil.create('canvas', 'radar-canvas');
     radarMap.getPanes().overlayPane.appendChild(canvas);
@@ -974,7 +976,7 @@ async function startRadar() {
       const scale = Math.pow(2, zoom - z);
       const ts = 256 * scale;
       const pb = radarMap.getPixelBounds();
-      const pad = isPhone ? 0 : 1;
+      const pad = 0;
       const x0 = Math.floor(pb.min.x / ts) - pad;
       const x1 = Math.floor(pb.max.x / ts) + pad;
       const y0 = Math.floor(pb.min.y / ts) - pad;
@@ -1024,19 +1026,6 @@ async function startRadar() {
       }
       return done >= urls.length;
     }
-    function evict() {
-      if (cache.size <= MAX_TILES) return;
-      const keep = new Set();
-      const n = radarFrames.length;
-      for (let k = -1; k <= AHEAD; k++) {
-        const i = (radarIdx + k + n) % n;
-        tileUrls(radarFrames[i]).forEach((u) => keep.add(u));
-      }
-      for (const url of [...cache.keys()]) {
-        if (cache.size <= MAX_TILES) break;
-        if (!keep.has(url)) cache.delete(url);
-      }
-    }
     function placeCanvas() {
       const size = radarMap.getSize();
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -1051,13 +1040,12 @@ async function startRadar() {
       L.DomUtil.setPosition(canvas, radarMap.containerPointToLayerPoint([0, 0]));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
-    function draw() {
-      if (!radarMap || !ctx) return;
-      placeCanvas();
+    function paintFrame(i) {
+      const frame = radarFrames[i];
+      if (!frame || !ctx) return false;
+      if (!frameReady(i)) return false;
       const size = radarMap.getSize();
       ctx.clearRect(0, 0, size.x, size.y);
-      const frame = radarFrames[radarIdx];
-      if (!frame) return;
       const zoom = radarMap.getZoom();
       const z = tileZoom();
       const scale = Math.pow(2, zoom - z);
@@ -1067,7 +1055,7 @@ async function startRadar() {
       const x1 = Math.floor(pb.max.x / ts);
       const y0 = Math.floor(pb.min.y / ts);
       const y1 = Math.floor(pb.max.y / ts);
-      ctx.globalAlpha = 0.72;
+      ctx.globalAlpha = 0.8;
       for (let x = x0; x <= x1; x++) {
         for (let y = y0; y <= y1; y++) {
           const url = frame.url.replace('{z}', z).replace('{x}', x).replace('{y}', y);
@@ -1077,6 +1065,18 @@ async function startRadar() {
         }
       }
       ctx.globalAlpha = 1;
+      return true;
+    }
+    function draw() {
+      if (!radarMap || !ctx) return;
+      placeCanvas();
+      if (!paintFrame(radarIdx)) {
+        // Keep the last complete frame on screen instead of flashing empty tiles.
+        for (let k = 1; k < radarFrames.length; k++) {
+          const j = (radarIdx - k + radarFrames.length) % radarFrames.length;
+          if (paintFrame(j)) break;
+        }
+      }
     }
     function labels() {
       const f = radarFrames[radarIdx];
@@ -1090,24 +1090,35 @@ async function startRadar() {
       scrub.value = String(radarIdx);
       scrub.style.accentColor = isFcst ? '#c9843a' : '#2ec4b6';
     }
+    function prefetchAll() {
+      for (let i = 0; i < radarFrames.length; i++) requestFrame(i);
+    }
     function goTo(i) {
       radarIdx = (i + radarFrames.length) % radarFrames.length;
       requestFrame(radarIdx);
-      for (let k = 1; k <= AHEAD; k++) requestFrame((radarIdx + k) % radarFrames.length);
-      evict();
       labels();
       draw();
     }
 
     radarRedraw = () => { draw(); requestFrame(radarIdx); };
 
-    radarMap.on('move zoom viewreset resize', () => {
+    radarMap.on('move viewreset resize', () => {
       if (!radarVisible) return;
       draw();
-      requestFrame(radarIdx);
+    });
+    radarMap.on('moveend', () => {
+      if (!radarVisible) return;
+      prefetchAll();
+      draw();
+    });
+    radarMap.on('zoomend', () => {
+      cache.clear();
+      queue.length = 0;
+      prefetchAll();
+      draw();
     });
 
-    let lastTs = 0, waitingSince = 0;
+    let lastTs = 0;
     function loop(ts) {
       radarTimer = requestAnimationFrame(loop);
       if (!radarPlaying || !radarVisible || document.hidden) {
@@ -1119,11 +1130,7 @@ async function startRadar() {
       if (ts - lastTs < delay) return;
       const next = (radarIdx + 1) % radarFrames.length;
       requestFrame(next);
-      if (!frameReady(next)) {
-        if (!waitingSince) waitingSince = ts;
-        if (ts - waitingSince < LOAD_WAIT) return;
-      }
-      waitingSince = 0;
+      if (!frameReady(next)) return;
       lastTs = ts;
       goTo(next);
     }
@@ -1131,7 +1138,6 @@ async function startRadar() {
       radarPlaying = true;
       playBtn.textContent = 'Pause';
       lastTs = 0;
-      waitingSince = 0;
       if (!radarTimer) radarTimer = requestAnimationFrame(loop);
     }
     function pause() {
@@ -1150,16 +1156,15 @@ async function startRadar() {
     });
 
     status.textContent = 'buffering';
+    prefetchAll();
     goTo(0);
-    const bufferN = Math.min(AHEAD, radarFrames.length);
-    for (let k = 0; k < bufferN; k++) requestFrame(k);
 
     const t0 = performance.now();
     (function waitBuffer() {
-      const need = Math.min(isPhone ? 4 : 6, radarFrames.length);
+      const need = Math.min(isPhone ? 8 : 12, radarFrames.length);
       let ready = 0;
       for (let k = 0; k < need; k++) if (frameReady(k)) ready++;
-      if (ready >= need || performance.now() - t0 > 1500) {
+      if (ready >= need || performance.now() - t0 > 4000) {
         labels();
         draw();
         play();
