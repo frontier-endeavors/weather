@@ -30,7 +30,11 @@
     --sky-bot: #06151c;
     --glow-a: rgba(46, 196, 182, 0.22);
     --glow-b: rgba(77, 163, 255, 0.18);
+    --flame-a: transparent;
+    --flame-b: transparent;
     background:
+      radial-gradient(620px 340px at 18% 110%, var(--flame-a), transparent 58%),
+      radial-gradient(520px 300px at 90% 118%, var(--flame-b), transparent 55%),
       radial-gradient(900px 500px at 10% -10%, var(--glow-a), transparent 55%),
       radial-gradient(800px 460px at 100% 0%, var(--glow-b), transparent 52%),
       linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 42%, var(--sky-bot) 100%);
@@ -61,6 +65,18 @@
   @keyframes storm-pulse {
     0%, 100% { opacity: 0.45; }
     50% { opacity: 0.9; }
+  }
+  body.sky-hot:not(.sky-storm)::after {
+    content: "";
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(560px 300px at 22% 108%, rgba(255, 70, 18, 0.34), transparent 58%),
+      radial-gradient(480px 260px at 86% 116%, rgba(255, 140, 28, 0.26), transparent 55%);
+    animation: heat-shimmer 3.2s ease-in-out infinite;
+  }
+  @keyframes heat-shimmer {
+    0%, 100% { opacity: 0.62; }
+    50% { opacity: 1; }
   }
   .wrap { position: relative; z-index: 1; max-width: 980px; margin: 0 auto; padding: 1.25rem 1rem 2.5rem; }
   header { margin-bottom: 0.85rem; }
@@ -109,6 +125,8 @@
   /* keep rows tight: hide secondary condition line */
   .hour-card .wx .detail, .day-row .wx .detail { display: none; }
   .temp { font-weight: 700; font-variant-numeric: tabular-nums; color: #b8ffe0; font-size: 1rem; }
+  .temp.hot, .hi.hot { color: #ffb070; }
+  .temp.hot-fire, .hi.hot-fire { color: #ff6b4d; }
   .pill {
     display: inline-block; min-width: 2.4rem; text-align: center;
     background: rgba(77, 163, 255, 0.15); color: #9fd0ff;
@@ -169,7 +187,7 @@
   .day-name { font-weight: 650; }
   .day-temps { display: flex; align-items: center; gap: 0.45rem; font-variant-numeric: tabular-nums; }
   .lo { color: var(--muted); width: 2.2rem; text-align: right; flex: 0 0 auto; }
-  .hi { font-weight: 700; width: 2.2rem; color: #b8ffe0; flex: 0 0 auto; }
+  .hi { font-weight: 700; min-width: 2.2rem; color: #b8ffe0; flex: 0 0 auto; text-align: right; }
   .bar-track { flex: 1; height: 8px; background: #12343c; border-radius: 999px; position: relative; overflow: hidden; min-width: 2.5rem; }
   .bar-fill {
     position: absolute; top: 0; bottom: 0; border-radius: 999px;
@@ -324,7 +342,7 @@
       <button data-tab="creek">Wildcat Creek</button>
     </nav>
 
-    <section id="hourly" class="panel active"></section>
+    <section id="hourly" class="panel active"><p class="hint">Loading live forecast…</p></section>
     <section id="tenday" class="panel"></section>
     <section id="radar" class="panel">
       <p class="hint">4 hours of observed NEXRAD (5-min), then NOAA HRRR forecast. Green is real; gold is projected.</p>
@@ -461,10 +479,11 @@ const SKY_STOPS = [
   { at: 38, top: '#0a1e3c', mid: '#0b2748', bot: '#071428', glowA: '#3d8fff', glowB: '#5aa0ff', accent: '#7ec8ff' },
   { at: 55, top: '#0a2a40', mid: '#0c3040', bot: '#071a28', glowA: '#2ec4b6', glowB: '#4da3ff', accent: '#7ee0d0' },
   { at: 70, top: '#062028', mid: '#071a1f', bot: '#06151c', glowA: '#2ec4b6', glowB: '#4da3ff', accent: '#3dffa8' },
-  { at: 86, top: '#0a2418', mid: '#0c2618', bot: '#08180f', glowA: '#3dffa8', glowB: '#7ecf6a', accent: '#7CFFB2' },
-  { at: 91, top: '#2a160c', mid: '#32180c', bot: '#1a0c08', glowA: '#ff8a3d', glowB: '#ffb347', accent: '#ffb070' },
-  { at: 100, top: '#3a0e0c', mid: '#2c0a0a', bot: '#180606', glowA: '#ff5a3d', glowB: '#ff8a5b', accent: '#ff8a6a' },
-  { at: 108, top: '#4a0808', mid: '#2a0404', bot: '#120202', glowA: '#ff3d3d', glowB: '#ff6b4d', accent: '#ff6b6b' }
+  { at: 79, top: '#0a2418', mid: '#0c2618', bot: '#08180f', glowA: '#3dffa8', glowB: '#7ecf6a', accent: '#7CFFB2' },
+  { at: 81, top: '#2a180c', mid: '#2c160c', bot: '#1a0e08', glowA: '#ff8a3d', glowB: '#ffb347', accent: '#ffb070' },
+  { at: 90, top: '#3a120c', mid: '#2e0e0a', bot: '#180808', glowA: '#ff6a33', glowB: '#ff9a40', accent: '#ff8a5b' },
+  { at: 95, top: '#4a0c08', mid: '#2c0806', bot: '#140404', glowA: '#ff4a28', glowB: '#ff7a30', accent: '#ff6b4d' },
+  { at: 105, top: '#5a0808', mid: '#2a0404', bot: '#100202', glowA: '#ff2d20', glowB: '#ff5a30', accent: '#ff5a4a' }
 ];
 const RAIN_SKY = { top: '#12182a', mid: '#0e1524', bot: '#090d16', glowA: '#5b7cff', glowB: '#3d5aaa', accent: '#b8c9ff' };
 const STORM_SKY = { top: '#16122a', mid: '#120e22', bot: '#0a0814', glowA: '#8a6bff', glowB: '#4a3d88', accent: '#c9b8ff' };
@@ -531,9 +550,20 @@ function applySky(data) {
   body.style.setProperty('--glow-a', rgbaFromHex(sky.glowA, isStorm ? 0.32 : 0.24));
   body.style.setProperty('--glow-b', rgbaFromHex(sky.glowB, 0.22));
   root.style.setProperty('--green', sky.accent);
+  const isHot = high >= 95 && !isSnow;
   body.classList.toggle('sky-rain', isRain && !isSnow);
   body.classList.toggle('sky-storm', isStorm);
+  body.classList.toggle('sky-hot', isHot);
   body.style.setProperty('--rain-opacity', isStorm ? '0.38' : (isRain ? '0.26' : '0'));
+  body.style.setProperty('--flame-a', isHot ? 'rgba(255, 70, 18, 0.34)' : 'transparent');
+  body.style.setProperty('--flame-b', isHot ? 'rgba(255, 150, 30, 0.22)' : 'transparent');
+}
+
+function tempTone(n) {
+  const v = Number(n);
+  if (v >= 95) return { cls: 'hot-fire', fire: true };
+  if (v >= 81) return { cls: 'hot', fire: false };
+  return { cls: '', fire: false };
 }
 
 function render(data) {
@@ -550,6 +580,7 @@ function render(data) {
       cards.push(`<div class="day-group">${esc(day)}</div>`);
     }
     const c = condLines(r.label, r.detail);
+    const tt = tempTone(r.temp);
     const time = clock || r.t;
     cards.push(`<div class="hour-card">
       <div class="time">${esc(time)}</div>
@@ -560,7 +591,7 @@ function render(data) {
         <span class="pill">${rainPill(r.rain)}</span>
         <span class="wind">${esc(r.wind)}</span>
       </div>
-      <div class="temp">${esc(r.temp)}°</div>
+      <div class="temp ${tt.cls}">${tt.fire ? '🔥' : ''}${esc(r.temp)}°</div>
     </div>`);
     trows.push(`<tr>
       <td>${esc(r.t)}</td>
@@ -569,7 +600,7 @@ function render(data) {
         ${c.detail ? `<div class="detail">${esc(c.detail)}</div>` : ''}</div></div></td>
       <td><span class="pill">${rainPill(r.rain)}</span></td>
       <td>${esc(r.wind)}</td>
-      <td class="temp">${esc(r.temp)}°</td>
+      <td class="temp ${tt.cls}">${tt.fire ? '🔥' : ''}${esc(r.temp)}°</td>
     </tr>`);
   }
   document.getElementById('hourly').innerHTML = `
@@ -592,7 +623,7 @@ function render(data) {
         <div><div class="label">${esc(d.label)}</div></div></div>
       <div class="day-rain">${esc(rain)}</div>
       <div class="day-wind">${esc(d.wind)}</div>
-      <div class="day-temps"><span class="lo">${d.low}°</span><div class="bar-track"><div class="bar-fill" style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></div></div><span class="hi">${d.high}°</span></div>
+      <div class="day-temps"><span class="lo">${d.low}°</span><div class="bar-track"><div class="bar-fill" style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></div></div><span class="hi ${tempTone(d.high).cls}">${tempTone(d.high).fire ? '🔥' : ''}${d.high}°</span></div>
       <div class="day-meta"><span>${esc(rain)}</span><span>${esc(d.wind)}</span></div>
     </div>`;
   }).join('');
@@ -801,13 +832,15 @@ async function loadCreekUsgs() {
 }
 
 let state = JSON.parse(JSON.stringify(SNAP));
+let didLive = false;
 
 async function refreshLive() {
   if (location.protocol === 'file:') {
+    if (!didLive) render(state);
     setBadge('err', 'serve over http for live');
     return;
   }
-  setBadge('stale', 'updating…');
+  setBadge('stale', didLive ? 'updating…' : 'loading');
   const results = await Promise.allSettled([
     loadHourlyNws(),
     loadDailyMet().catch(async (err) => {
@@ -826,18 +859,24 @@ async function refreshLive() {
   else console.warn('creek failed', c.reason);
 
   if (ok === 0) {
-    setBadge('err', 'snapshot (live failed)');
+    if (!didLive) render(state);
+    setBadge('err', didLive ? 'update failed' : 'snapshot (live failed)');
     return;
   }
+  didLive = true;
   state.generated = stampNow();
   render(state);
   if (ok === 3) setBadge('', 'live');
   else setBadge('stale', `live (${ok}/3)`);
 }
 
-render(state);
-setBadge('stale', location.protocol === 'file:' ? 'snapshot (file://)' : 'snapshot');
-setTimeout(refreshLive, 50);
+if (location.protocol === 'file:') {
+  render(state);
+  setBadge('err', 'serve over http for live');
+} else {
+  setBadge('stale', 'loading');
+  setTimeout(refreshLive, 50);
+}
 setInterval(refreshLive, 10 * 60 * 1000);
 
 document.querySelectorAll('nav.tabs button').forEach(btn => {
