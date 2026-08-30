@@ -7,7 +7,7 @@ Personal Manhattan, KS weather + Wildcat Creek dashboard.
 Live data needs `http://` (not opening the file directly):
 
 ```bash
-cd ~/code/weather
+cd ~/code/frontier/weather
 python3 -m http.server 8080
 open http://127.0.0.1:8080
 ```
