@@ -94,6 +94,19 @@
   }
   #liveBadge.stale { background: rgba(240,193,77,0.15); color: var(--warn); }
   #liveBadge.err { background: rgba(255,107,122,0.15); color: var(--bad); }
+  #aqiBadge {
+    display: none; margin-left: 0.35rem;
+    padding: 0.1rem 0.45rem; border-radius: 999px;
+    font-size: 0.75rem; font-weight: 650;
+    vertical-align: 0.05rem;
+  }
+  #aqiBadge.show { display: inline-block; }
+  #aqiBadge.good { background: rgba(61,255,168,0.14); color: var(--green); }
+  #aqiBadge.moderate { background: rgba(240,193,77,0.16); color: var(--warn); }
+  #aqiBadge.usg { background: rgba(255,140,60,0.18); color: #ffb070; }
+  #aqiBadge.unhealthy { background: rgba(255,107,122,0.16); color: var(--bad); }
+  #aqiBadge.very { background: rgba(170,110,255,0.18); color: #c9b8ff; }
+  #aqiBadge.hazardous { background: rgba(120,40,60,0.35); color: #ff8aaa; }
   nav.tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.9rem 0 0.85rem; }
   nav.tabs button {
     appearance: none; border: 1px solid var(--line); background: var(--bg2);
@@ -332,6 +345,7 @@
       <div class="sub">
         Hourly · 10-day · Radar · Wildcat Creek · <span id="generated"></span>
         <span id="liveBadge" class="stale">snapshot</span>
+        <span id="aqiBadge" title="US Air Quality Index"></span>
       </div>
     </header>
 
@@ -361,7 +375,7 @@
     </section>
     <section id="creek" class="panel"></section>
 
-    <footer>NWS hourly · MET Norway 10-day · USGS creek · IEM NEXRAD / HRRR</footer>
+    <footer>NWS hourly · MET Norway 10-day · USGS creek · IEM NEXRAD / HRRR · Open-Meteo AQI</footer>
   </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -449,6 +463,35 @@ function setBadge(mode, text) {
   const el = document.getElementById('liveBadge');
   el.className = mode;
   el.textContent = text;
+}
+function aqiCategory(n) {
+  if (n == null || Number.isNaN(n)) return null;
+  if (n <= 50) return { cls: 'good', label: 'Good' };
+  if (n <= 100) return { cls: 'moderate', label: 'Moderate' };
+  if (n <= 150) return { cls: 'usg', label: 'USG' };
+  if (n <= 200) return { cls: 'unhealthy', label: 'Unhealthy' };
+  if (n <= 300) return { cls: 'very', label: 'Very unhealthy' };
+  return { cls: 'hazardous', label: 'Hazardous' };
+}
+function setAqi(n) {
+  const el = document.getElementById('aqiBadge');
+  const cat = aqiCategory(Number(n));
+  if (!cat) {
+    el.className = '';
+    el.textContent = '';
+    el.removeAttribute('title');
+    return;
+  }
+  el.className = 'show ' + cat.cls;
+  el.textContent = `AQI ${Math.round(n)} · ${cat.label}`;
+  el.title = 'US Air Quality Index (Open-Meteo)';
+}
+async function loadAqi() {
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${LAT}&longitude=${LON}&current=us_aqi&timezone=America%2FChicago`;
+  const data = await fetchJson(url);
+  const n = data?.current?.us_aqi;
+  if (n == null) throw new Error('no us_aqi');
+  return n;
 }
 function stampNow() {
   return new Date().toLocaleString('en-US', {
@@ -847,9 +890,12 @@ async function refreshLive() {
       console.warn('met.no failed, trying NWS MapClick', err);
       return loadDailyMapClick();
     }),
-    loadCreekUsgs()
+    loadCreekUsgs(),
+    loadAqi()
   ]);
-  const [h, d, c] = results;
+  const [h, d, c, a] = results;
+  if (a.status === 'fulfilled') setAqi(a.value);
+  else console.warn('aqi failed', a.reason);
   let ok = 0;
   if (h.status === 'fulfilled') { state.hourly = h.value; ok++; }
   else console.warn('hourly failed', h.reason);
