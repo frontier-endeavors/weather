@@ -351,33 +351,21 @@
     font: inherit; cursor: pointer;
   }
   .wx-alert.extreme {
-    border-color: rgba(255, 80, 100, 0.55);
-    background: rgba(90, 10, 24, 0.7);
+    border-color: rgba(255, 70, 90, 0.65);
+    background: rgba(110, 8, 22, 0.78);
   }
   .wx-alert.severe {
-    border-color: rgba(255, 140, 60, 0.5);
-    background: rgba(90, 35, 10, 0.62);
+    border-color: rgba(255, 90, 90, 0.55);
+    background: rgba(100, 18, 22, 0.7);
   }
   .wx-alert.moderate {
-    border-color: rgba(240, 193, 77, 0.4);
-    background: rgba(70, 55, 10, 0.5);
+    border-color: rgba(240, 193, 77, 0.55);
+    background: rgba(90, 70, 12, 0.58);
   }
   .wx-alert.minor, .wx-alert.unknown {
     border-color: rgba(120, 180, 220, 0.35);
     background: rgba(20, 45, 70, 0.5);
   }
-  .wx-alert-top {
-    display: flex; align-items: flex-start; gap: 0.55rem;
-  }
-  .wx-alert-badge {
-    flex: 0 0 auto; font-size: 0.68rem; font-weight: 750;
-    letter-spacing: 0.04em; text-transform: uppercase;
-    padding: 0.18rem 0.45rem; border-radius: 999px;
-    background: rgba(255,255,255,0.12); color: #ffd7a8;
-    margin-top: 0.1rem;
-  }
-  .wx-alert.extreme .wx-alert-badge { color: #ffb0ba; background: rgba(255,80,100,0.18); }
-  .wx-alert-body { min-width: 0; flex: 1; }
   .wx-alert-event {
     font-weight: 750; font-size: 0.95rem; line-height: 1.25;
   }
@@ -601,6 +589,20 @@ async function loadAlerts() {
   });
 }
 
+
+/** Reflow NWS teletype-style wraps into readable paragraphs. */
+function formatAlertText(s) {
+  if (!s) return '';
+  let t = String(s).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Literal backslash-n sequences from bad joins, if any.
+  t = t.replace(/\\n/g, '\n');
+  const paras = t.split(/\n{2,}/).map(para =>
+    para.replace(/\n+/g, ' ').replace(/[ \t\u00a0]+/g, ' ').trim()
+  ).filter(Boolean);
+  return paras.join('\n\n');
+}
+
+
 function renderAlerts(alerts) {
   const host = document.getElementById('wxAlerts');
   if (!host) return;
@@ -611,22 +613,17 @@ function renderAlerts(alerts) {
   host.innerHTML = alerts.map((p, i) => {
     const sev = p.severity || 'Unknown';
     const until = alertUntil(p);
-    const headline = p.headline || p.description || '';
-    const detailParts = [];
-    if (p.description) detailParts.push(p.description.trim());
-    if (p.instruction) detailParts.push('What to do:\n' + p.instruction.trim());
+    const headline = formatAlertText(p.headline || '') || formatAlertText((p.description || '').slice(0, 240));
+        const detailParts = [];
+    if (p.description) detailParts.push(formatAlertText(p.description));
+    if (p.instruction) detailParts.push('What to do:\n' + formatAlertText(p.instruction));
     if (until) detailParts.push('In effect until ' + until + ' CT');
-    const detail = detailParts.join('\n\n');
+    const detail = detailParts.filter(Boolean).join('\n\n');
     return `<button type="button" class="wx-alert ${alertSeverityClass(sev)}" data-alert-idx="${i}" aria-expanded="false">
-      <div class="wx-alert-top">
-        <span class="wx-alert-badge">${esc(sev)}</span>
-        <div class="wx-alert-body">
-          <div class="wx-alert-event">${esc(p.event || 'Weather alert')}</div>
-          <div class="wx-alert-headline">${esc(headline)}</div>
-          <div class="wx-alert-more">Tap for details</div>
-          <div class="wx-alert-detail">${esc(detail)}</div>
-        </div>
-      </div>
+      <div class="wx-alert-event">${esc(p.event || 'Weather alert')}</div>
+      <div class="wx-alert-headline">${esc(headline)}</div>
+      <div class="wx-alert-more">Tap for details</div>
+      <div class="wx-alert-detail">${esc(detail)}</div>
     </button>`;
   }).join('');
 
