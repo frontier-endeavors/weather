@@ -646,7 +646,7 @@ function render(data) {
       <td class="temp ${tt.cls}">${tt.fire ? '🔥' : ''}${esc(r.temp)}°</td>
     </tr>`);
   }
-  document.document.getElementById('hourly').innerHTML = `
+  document.getElementById('hourly').innerHTML = `
     <p class="hint">Next 48 hours · rain % blends NWS with near-term model (18h)</p>
     <div class="hour-list mobile-cards">${cards.join('')}</div>
     <div class="hour-list desktop-table"><table class="hour-table">
