@@ -336,6 +336,72 @@
     .hour-list.desktop-table { display: block !important; }
     .day-meta { display: none !important; }
   }
+
+  .wx-alerts {
+    display: flex; flex-direction: column; gap: 0.45rem;
+    margin: 0.55rem 0 0.15rem;
+  }
+  .wx-alerts:empty { display: none; }
+  .wx-alert {
+    appearance: none; width: 100%; text-align: left;
+    border: 1px solid rgba(255, 180, 80, 0.35);
+    background: rgba(90, 40, 12, 0.55);
+    color: var(--text);
+    border-radius: 12px; padding: 0.65rem 0.8rem;
+    font: inherit; cursor: pointer;
+  }
+  .wx-alert.extreme {
+    border-color: rgba(255, 80, 100, 0.55);
+    background: rgba(90, 10, 24, 0.7);
+  }
+  .wx-alert.severe {
+    border-color: rgba(255, 140, 60, 0.5);
+    background: rgba(90, 35, 10, 0.62);
+  }
+  .wx-alert.moderate {
+    border-color: rgba(240, 193, 77, 0.4);
+    background: rgba(70, 55, 10, 0.5);
+  }
+  .wx-alert.minor, .wx-alert.unknown {
+    border-color: rgba(120, 180, 220, 0.35);
+    background: rgba(20, 45, 70, 0.5);
+  }
+  .wx-alert-top {
+    display: flex; align-items: flex-start; gap: 0.55rem;
+  }
+  .wx-alert-badge {
+    flex: 0 0 auto; font-size: 0.68rem; font-weight: 750;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 0.18rem 0.45rem; border-radius: 999px;
+    background: rgba(255,255,255,0.12); color: #ffd7a8;
+    margin-top: 0.1rem;
+  }
+  .wx-alert.extreme .wx-alert-badge { color: #ffb0ba; background: rgba(255,80,100,0.18); }
+  .wx-alert-body { min-width: 0; flex: 1; }
+  .wx-alert-event {
+    font-weight: 750; font-size: 0.95rem; line-height: 1.25;
+  }
+  .wx-alert-headline {
+    color: var(--muted); font-size: 0.82rem; line-height: 1.3;
+    margin-top: 0.15rem;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .wx-alert.open .wx-alert-headline {
+    display: block; -webkit-line-clamp: unset; overflow: visible;
+  }
+  .wx-alert-more {
+    margin-top: 0.45rem; color: #ffd7a8; font-size: 0.78rem; font-weight: 650;
+  }
+  .wx-alert-detail {
+    display: none; margin-top: 0.55rem; padding-top: 0.55rem;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    white-space: pre-wrap; font-size: 0.84rem; line-height: 1.4;
+    color: #e8ddd0;
+  }
+  .wx-alert.open .wx-alert-detail { display: block; }
+  .wx-alert.open .wx-alert-more { display: none; }
+
 </style>
 </head>
 <body>
@@ -348,6 +414,8 @@
         <span id="aqiBadge" title="US Air Quality Index"></span>
       </div>
     </header>
+
+    <div id="wxAlerts" class="wx-alerts" aria-live="polite"></div>
 
     <nav class="tabs" role="tablist">
       <button class="active" data-tab="hourly">Hourly</button>
@@ -375,7 +443,7 @@
     </section>
     <section id="creek" class="panel"></section>
 
-    <footer>NWS hourly (rain blended near-term) · MET Norway 10-day · USGS creek · IEM NEXRAD / HRRR · Open-Meteo AQI</footer>
+    <footer>NWS hourly (rain blended near-term) · NWS alerts · MET Norway 10-day · USGS creek · IEM NEXRAD / HRRR · Open-Meteo AQI</footer>
   </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -493,6 +561,83 @@ async function loadAqi() {
   if (n == null) throw new Error('no us_aqi');
   return n;
 }
+
+const ALERT_SEVERITY_RANK = { Extreme: 0, Severe: 1, Moderate: 2, Minor: 3, Unknown: 4 };
+
+function alertSeverityClass(sev) {
+  const s = String(sev || 'Unknown').toLowerCase();
+  if (s === 'extreme') return 'extreme';
+  if (s === 'severe') return 'severe';
+  if (s === 'moderate') return 'moderate';
+  if (s === 'minor') return 'minor';
+  return 'unknown';
+}
+
+function alertUntil(p) {
+  const raw = p.ends || p.expires;
+  if (!raw) return '';
+  try {
+    return new Date(raw).toLocaleString('en-US', {
+      timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric', minute: '2-digit'
+    });
+  } catch (_) { return ''; }
+}
+
+async function loadAlerts() {
+  const data = await fetchJson(
+    `https://api.weather.gov/alerts/active?point=${LAT},${LON}`
+  );
+  const feats = data.features || [];
+  return feats.map(f => f.properties || {}).filter(p => {
+    const ev = String(p.event || '');
+    if (!ev) return false;
+    if (/^test\b/i.test(ev)) return false;
+    return true;
+  }).sort((a, b) => {
+    const ra = ALERT_SEVERITY_RANK[a.severity] ?? 4;
+    const rb = ALERT_SEVERITY_RANK[b.severity] ?? 4;
+    if (ra !== rb) return ra - rb;
+    return String(a.event || '').localeCompare(String(b.event || ''));
+  });
+}
+
+function renderAlerts(alerts) {
+  const host = document.getElementById('wxAlerts');
+  if (!host) return;
+  if (!alerts || !alerts.length) {
+    host.innerHTML = '';
+    return;
+  }
+  host.innerHTML = alerts.map((p, i) => {
+    const sev = p.severity || 'Unknown';
+    const until = alertUntil(p);
+    const headline = p.headline || p.description || '';
+    const detailParts = [];
+    if (p.description) detailParts.push(p.description.trim());
+    if (p.instruction) detailParts.push('What to do:\\n' + p.instruction.trim());
+    if (until) detailParts.push('In effect until ' + until + ' CT');
+    const detail = detailParts.join('\\n\\n');
+    return `<button type="button" class="wx-alert ${alertSeverityClass(sev)}" data-alert-idx="${i}" aria-expanded="false">
+      <div class="wx-alert-top">
+        <span class="wx-alert-badge">${esc(sev)}</span>
+        <div class="wx-alert-body">
+          <div class="wx-alert-event">${esc(p.event || 'Weather alert')}</div>
+          <div class="wx-alert-headline">${esc(headline)}</div>
+          <div class="wx-alert-more">Tap for details</div>
+          <div class="wx-alert-detail">${esc(detail)}</div>
+        </div>
+      </div>
+    </button>`;
+  }).join('');
+
+  host.querySelectorAll('.wx-alert').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const open = btn.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  });
+}
+
 function stampNow() {
   return new Date().toLocaleString('en-US', {
     timeZone: 'America/Chicago', weekday: 'short', month: 'short', day: 'numeric',
@@ -1003,11 +1148,14 @@ async function refreshLive() {
       return loadDailyMapClick();
     }), 12000, 'daily'),
     withTimeout(loadCreekUsgs(), 10000, 'creek'),
-    withTimeout(loadAqi(), 8000, 'aqi')
+    withTimeout(loadAqi(), 8000, 'aqi'),
+    withTimeout(loadAlerts(), 8000, 'alerts')
   ]);
-  const [h, d, c, a] = results;
+  const [h, d, c, a, al] = results;
   if (a.status === 'fulfilled') setAqi(a.value);
   else console.warn('aqi failed', a.reason);
+  if (al.status === 'fulfilled') renderAlerts(al.value);
+  else console.warn('alerts failed', al.reason);
   let ok = 0;
   if (h.status === 'fulfilled') { state.hourly = h.value; ok++; }
   else console.warn('hourly failed', h.reason);
