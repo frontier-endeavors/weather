@@ -375,7 +375,7 @@
     </section>
     <section id="creek" class="panel"></section>
 
-    <footer>NWS hourly · MET Norway 10-day · USGS creek · IEM NEXRAD / HRRR · Open-Meteo AQI</footer>
+    <footer>NWS hourly (rain blended near-term) · MET Norway 10-day · USGS creek · IEM NEXRAD / HRRR · Open-Meteo AQI</footer>
   </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -646,8 +646,8 @@ function render(data) {
       <td class="temp ${tt.cls}">${tt.fire ? '🔥' : ''}${esc(r.temp)}°</td>
     </tr>`);
   }
-  document.getElementById('hourly').innerHTML = `
-    <p class="hint">Next 48 hours</p>
+  document.document.getElementById('hourly').innerHTML = `
+    <p class="hint">Next 48 hours · rain % blends NWS with near-term model (18h)</p>
     <div class="hour-list mobile-cards">${cards.join('')}</div>
     <div class="hour-list desktop-table"><table class="hour-table">
       <thead><tr><th>Time</th><th>Conditions</th><th>Rain</th><th>Wind</th><th>Temp</th></tr></thead>
@@ -720,31 +720,127 @@ async function fetchJson(url, opts) {
   return res.json();
 }
 
+let metCompactPromise = null;
+function getMetCompact() {
+  if (!metCompactPromise) {
+    metCompactPromise = fetchJson(
+      `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${LAT}&lon=${LON}`
+    ).catch(err => {
+      metCompactPromise = null;
+      throw err;
+    });
+  }
+  return metCompactPromise;
+}
+
+/** Map local hour key "YYYY-MM-DDTHH" America/Chicago -> MET QPF / symbol. */
+function metHourIndex(timeseries) {
+  const map = new Map();
+  for (const p of timeseries || []) {
+    const local = new Date(p.time).toLocaleString('en-CA', {
+      timeZone: 'America/Chicago', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit'
+    }).replace(', ', 'T').slice(0, 13); // YYYY-MM-DDTHH
+    const n1 = p.data?.next_1_hours;
+    if (!n1) continue;
+    map.set(local, {
+      mm: n1.details?.precipitation_amount ?? 0,
+      symbol: n1.summary?.symbol_code || ''
+    });
+  }
+  return map;
+}
+
+function chicagoHourKey(date) {
+  return new Date(date).toLocaleString('en-CA', {
+    timeZone: 'America/Chicago', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit'
+  }).replace(', ', 'T').slice(0, 13);
+}
+
+/** Turn MET near-term rain amount into a PoP-like confidence (null = no signal). */
+function qpfToPop(mm, symbol) {
+  if (mm == null || mm <= 0) return null;
+  let pop = mm < 0.2 ? 60 : mm < 0.5 ? 75 : mm < 1 ? 88 : mm < 2.5 ? 96 : 100;
+  const s = String(symbol || '');
+  if (s.includes('thunder')) pop = Math.max(pop, 92);
+  if (s.includes('heavyrain') || s.includes('heavyrainshowers')) pop = Math.max(pop, 98);
+  return pop;
+}
+
+async function loadOpenMeteoHourlyPop() {
+  const data = await fetchJson(
+    `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=precipitation_probability&timezone=America%2FChicago&forecast_days=2`
+  );
+  const map = new Map();
+  const times = data.hourly?.time || [];
+  const pops = data.hourly?.precipitation_probability || [];
+  for (let i = 0; i < times.length; i++) {
+    // already Chicago local ISO without offset: 2026-09-19T18:00
+    map.set(String(times[i]).slice(0, 13), pops[i]);
+  }
+  return map;
+}
+
+const RAIN_BLEND_HOURS = 18;
+
+function blendRainPop(nwsPop, secondaryPop) {
+  if (secondaryPop == null || Number.isNaN(Number(secondaryPop))) return nwsPop;
+  if (nwsPop == null || Number.isNaN(Number(nwsPop))) return Math.round(Number(secondaryPop));
+  return Math.round(Math.max(Number(nwsPop), Number(secondaryPop)));
+}
+
 async function loadHourlyNws() {
   // No custom headers — avoids CORS preflight issues in the browser.
   const data = await fetchJson(
     `https://api.weather.gov/gridpoints/TOP/50,55/forecast/hourly`
   );
+
+  // Second model for near-term rain: prefer Open-Meteo PoP; fall back to MET Norway QPF→odds.
+  let secondary = null;
+  let secondaryName = null;
+  try {
+    secondary = await loadOpenMeteoHourlyPop();
+    secondaryName = 'open-meteo';
+  } catch (err) {
+    console.warn('open-meteo hourly pop failed, trying MET QPF', err);
+    try {
+      const met = await getMetCompact();
+      const idx = metHourIndex(met.properties?.timeseries);
+      secondary = new Map();
+      for (const [k, v] of idx) secondary.set(k, qpfToPop(v.mm, v.symbol));
+      secondaryName = 'met-qpf';
+    } catch (err2) {
+      console.warn('met hourly rain blend failed', err2);
+    }
+  }
+
+  const now = Date.now();
   return data.properties.periods.slice(0, 48).map(p => {
-    const t = new Date(p.startTime);
-    const rain = (p.probabilityOfPrecipitation || {}).value;
+    const start = new Date(p.startTime);
+    let rain = (p.probabilityOfPrecipitation || {}).value;
+    const withinBlend = (start.getTime() - now) <= RAIN_BLEND_HOURS * 3600 * 1000
+      && start.getTime() >= now - 3600 * 1000;
+    if (withinBlend && secondary) {
+      const key = chicagoHourKey(start);
+      rain = blendRainPop(rain, secondary.get(key));
+    }
     const [emoji, label] = fromText(p.shortForecast, rain);
     return {
-      t: t.toLocaleString('en-US', { timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric' }).replace(',', ''),
+      t: start.toLocaleString('en-US', { timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric' }).replace(',', ''),
       temp: p.temperature,
       emoji, label,
       detail: p.shortForecast,
       rain,
-      wind: `${p.windSpeed} ${p.windDirection}`
+      wind: `${p.windSpeed} ${p.windDirection}`,
+      rainSource: secondaryName
     };
   });
 }
 
 async function loadDailyMet() {
   // compact + no custom headers (met.no 403s / fails preflight on custom User-Agent)
-  const data = await fetchJson(
-    `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${LAT}&lon=${LON}`
-  );
+  const data = await getMetCompact();
   const byDay = {};
   for (const p of data.properties.timeseries) {
     const local = new Date(p.time);
