@@ -594,13 +594,16 @@ async function loadAlerts() {
 function formatAlertText(s) {
   if (!s) return '';
   let t = String(s).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  // Literal backslash-n sequences from bad joins, if any.
   t = t.replace(/\\n/g, '\n');
-  const paras = t.split(/\n{2,}/).map(para =>
-    para.replace(/\n+/g, ' ').replace(/[ \t\u00a0]+/g, ' ').trim()
-  ).filter(Boolean);
-  return paras.join('\n\n');
+  // Flatten NWS teletype wraps (including blank lines between counties).
+  t = t.replace(/\n+/g, ' ').replace(/[ \t\u00a0]+/g, ' ').trim();
+  // Soft breaks before common section markers.
+  t = t.replace(/ \* /g, '\n\n* ');
+  t = t.replace(/\s+(PRECAUTIONARY\/PREPAREDNESS ACTIONS\.\.\.)/gi, '\n\n$1');
+  t = t.replace(/\s+(&&)/g, '\n\n');
+  return t.replace(/\n{3,}/g, '\n\n').trim();
 }
+
 
 
 function renderAlerts(alerts) {
