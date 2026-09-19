@@ -719,6 +719,15 @@ async function fetchJson(url, opts) {
   if (!res.ok) throw new Error(`${url} → ${res.status}`);
   return res.json();
 }
+function withTimeout(promise, ms, label = 'request') {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    })
+  ]);
+}
 
 let metCompactPromise = null;
 function getMetCompact() {
@@ -796,22 +805,29 @@ async function loadHourlyNws() {
     `https://api.weather.gov/gridpoints/TOP/50,55/forecast/hourly`
   );
 
-  // Second model for near-term rain: prefer Open-Meteo PoP; fall back to MET Norway QPF→odds.
+  // Second model for near-term rain. Prefer MET QPF (already used for 10-day, reliable),
+  // then Open-Meteo PoP. Short timeouts so a hung secondary never blocks the page.
   let secondary = null;
   let secondaryName = null;
   try {
-    secondary = await loadOpenMeteoHourlyPop();
-    secondaryName = 'open-meteo';
+    const met = await withTimeout(getMetCompact(), 4000, 'met rain blend');
+    const idx = metHourIndex(met.properties?.timeseries);
+    secondary = new Map();
+    for (const [k, v] of idx) {
+      const pop = qpfToPop(v.mm, v.symbol);
+      if (pop != null) secondary.set(k, pop);
+    }
+    secondaryName = 'met-qpf';
   } catch (err) {
-    console.warn('open-meteo hourly pop failed, trying MET QPF', err);
+    console.warn('met hourly rain blend failed', err);
+  }
+  if (!secondary || secondary.size === 0) {
     try {
-      const met = await getMetCompact();
-      const idx = metHourIndex(met.properties?.timeseries);
-      secondary = new Map();
-      for (const [k, v] of idx) secondary.set(k, qpfToPop(v.mm, v.symbol));
-      secondaryName = 'met-qpf';
-    } catch (err2) {
-      console.warn('met hourly rain blend failed', err2);
+      secondary = await withTimeout(loadOpenMeteoHourlyPop(), 3000, 'open-meteo rain blend');
+      secondaryName = 'open-meteo';
+    } catch (err) {
+      console.warn('open-meteo hourly pop failed', err);
+      secondary = null;
     }
   }
 
@@ -981,13 +997,13 @@ async function refreshLive() {
   }
   setBadge('stale', didLive ? 'updating…' : 'loading');
   const results = await Promise.allSettled([
-    loadHourlyNws(),
-    loadDailyMet().catch(async (err) => {
+    withTimeout(loadHourlyNws(), 12000, 'hourly'),
+    withTimeout(loadDailyMet().catch(async (err) => {
       console.warn('met.no failed, trying NWS MapClick', err);
       return loadDailyMapClick();
-    }),
-    loadCreekUsgs(),
-    loadAqi()
+    }), 12000, 'daily'),
+    withTimeout(loadCreekUsgs(), 10000, 'creek'),
+    withTimeout(loadAqi(), 8000, 'aqi')
   ]);
   const [h, d, c, a] = results;
   if (a.status === 'fulfilled') setAqi(a.value);
