@@ -614,9 +614,9 @@ function renderAlerts(alerts) {
     const headline = p.headline || p.description || '';
     const detailParts = [];
     if (p.description) detailParts.push(p.description.trim());
-    if (p.instruction) detailParts.push('What to do:\\n' + p.instruction.trim());
+    if (p.instruction) detailParts.push('What to do:\n' + p.instruction.trim());
     if (until) detailParts.push('In effect until ' + until + ' CT');
-    const detail = detailParts.join('\\n\\n');
+    const detail = detailParts.join('\n\n');
     return `<button type="button" class="wx-alert ${alertSeverityClass(sev)}" data-alert-idx="${i}" aria-expanded="false">
       <div class="wx-alert-top">
         <span class="wx-alert-badge">${esc(sev)}</span>
